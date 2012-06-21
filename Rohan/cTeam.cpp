@@ -1,6 +1,6 @@
 #include "stdafx.h"
 
-extern int gDebugLvl, gDevDebug, iWarnings, iErrors, gTrace;
+extern int gDebugLvl, gDevDebug, gTrace;
 extern long bCUDAavailable;
 
 //////////////// class cDeviceTeam begins ////////////////
@@ -94,7 +94,7 @@ long cDeviceTeam::LetEvalSet( rohanContext& rSes, long lSampleQtyReq, char chMet
 	return lFinalSample;
 }
 
-long cDeviceTeam::LetTrainNNThresh( rohanContext& rSes, long lSampleQtyReq, int o, char chMethod, double dTargetRMSE, int iEpochLength)
+long cDeviceTeam::LetTrainNNThresh( rohanContext& rSes, long lSampleQtyReq, int o, char chMethod, double dTargetRMSE, int iEpochLength, char cMode)
 {mIDfunc/// Submits a subset of the samples available for backprop learning.
 /// Size of the subet is controlled by lSampleQtyReq, o indictaes which output(s)
 //
@@ -102,7 +102,6 @@ long cDeviceTeam::LetTrainNNThresh( rohanContext& rSes, long lSampleQtyReq, int 
 // Option S - single sample correction only XX unimplemented?
 // Option E - keep existing weights, count trainable samples only
 // Option R - perform corrections for all trainable samples
-	bool bInternalTaut=false;
 	long lReturn, lFinalSample, count=1;
 	double RMSE; //=dTargetRMSE;
 	// check request is not too large or too small
@@ -110,37 +109,41 @@ long cDeviceTeam::LetTrainNNThresh( rohanContext& rSes, long lSampleQtyReq, int 
 		lFinalSample=lSampleQtyReq;
 	else
 		lFinalSample=rSes.rLearn->lSampleQty;
-	
-	if(!bTaut){
-		LetTaut(rSes);
-		bInternalTaut=true;
-	}
-	RMSE=knlFFeRmseOpt( rSes, lFinalSample, 1, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE
-	lReturn=knlBackProp( rSes, lFinalSample, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads); // do training
-
-	if(chMethod=='R') {
-		RMSE=knlFFeRmseOpt( rSes, lFinalSample, 1, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE
-		while(dTargetRMSE<RMSE && lReturn && count < iEpochLength && chMethod=='R'){ // target not met, trainable samples left
-			//if(gDevDebug)conPrintf(">>DEVICE: RMSE %f, %d trained, count %d of %d\n", RMSE, lReturn, count, iEpochLength);
-			lReturn=knlBackProp( rSes, lFinalSample, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads); // do more training
-			++count; // increment counter
-			RMSE=knlFFeRmseOpt( rSes, lFinalSample, 1, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE anew
+	if(cMode=='D' || cMode=='d'){
+		bool bInternalTaut=false;
+		if(!bTaut){
+			LetTaut(rSes);
+			bInternalTaut=true;
 		}
-		if(bInternalTaut)
-			LetSlack(rSes);
-		//if(gDevDebug)conPrintf(">>DEVICE: RMSE %f, %d trained, count %d of %d\n", RMSE, lReturn, count, iEpochLength);
-		rSes.dDevRMSE=RMSE; // update device-achieved RMSE
-		//if(gDevDebug)conPrintf(">>DEVICE: Epoch ended with %d iterations.\n", count);
-		//if(dTargetRMSE>=RMSE){
-		//	conPrintf(">>DEVICE:  Achieved RMSE target %f.\n", dTargetRMSE);
-			//rSes.dTargetRMSE=RMSE*0.9; // always want to decrease RMSE by 10%
-			//conPrintf(" New target is %f.\n", rSes.dTargetRMSE);
-		//}
+		RMSE=knlFFeRmseOpt( rSes, lFinalSample, 1, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE
+		lReturn=knlBackProp( rSes, lFinalSample, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads); // do training
+
+		if(chMethod=='R') {
+			RMSE=knlFFeRmseOpt( rSes, lFinalSample, 1, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE
+			while(dTargetRMSE<RMSE && lReturn && count < iEpochLength && chMethod=='R'){ // target not met, trainable samples left
+				//if(gDevDebug)conPrintf(">>DEVICE: RMSE %f, %d trained, count %d of %d\n", RMSE, lReturn, count, iEpochLength);
+				lReturn=knlBackProp( rSes, lFinalSample, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads); // do more training
+				++count; // increment counter
+				RMSE=knlFFeRmseOpt( rSes, lFinalSample, 1, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE anew
+			}
+			if(bInternalTaut)
+				LetSlack(rSes);
+			//if(gDevDebug)conPrintf(">>DEVICE: RMSE %f, %d trained, count %d of %d\n", RMSE, lReturn, count, iEpochLength);
+			rSes.dDevRMSE=RMSE; // update device-achieved RMSE
+			//if(gDevDebug)conPrintf(">>DEVICE: Epoch ended with %d iterations.\n", count);
+			//if(dTargetRMSE>=RMSE){
+			//	conPrintf(">>DEVICE:  Achieved RMSE target %f.\n", dTargetRMSE);
+				//rSes.dTargetRMSE=RMSE*0.9; // always want to decrease RMSE by 10%
+				//conPrintf(" New target is %f.\n", rSes.dTargetRMSE);
+			//}
+		}
+		else{
+			if(bInternalTaut)
+				LetSlack(rSes);
+		}	
 	}
-	else{
-		if(bInternalTaut)
-			LetSlack(rSes);
-	}	
+	if(cMode=='H' || cMode=='h'){
+	}
 
 	return lReturn;
 }
@@ -601,36 +604,27 @@ long cDeviceTeam::GetEvalSingleSample( struct rohanContext& rSes, long lSampleId
 }
 
 
-int cDeviceTeam::CUDAverify(struct rohanContext& rSes)
+double cDeviceTeam::CUDAverify(struct rohanContext& rSes)
 {mIDfunc/// Checks for prsence of CUDA-enabled hardware
-	
 	double compCap=1.0, check; rSes.dMasterCalcVer=0.0;
+	
 	cudaGetDeviceCount(&(rSes.deviceCount) ); 
-	for (int device = 0; device < rSes.deviceCount; ++device) { 
-		//CUDAShowProperties(rSes, device, rSes.debugHandle);
-		cudaGetDeviceProperties(&rSes.deviceProp, device); 
-		check=rSes.deviceProp.major + rSes.deviceProp.minor * 0.1;
-		if (check>compCap){
-			compCap=check;
-			if(check>rSes.dMasterCalcVer){
-				rSes.dMasterCalcVer=check;
-				rSes.iMasterCalcHw=device;
+	if(rSes.deviceCount){
+		for (int device = 0; device < rSes.deviceCount; ++device) { 
+			//CUDAShowProperties(rSes, device, rSes.debugHandle);
+			cudaGetDeviceProperties(&rSes.deviceProp, device); 
+			check=rSes.deviceProp.major + rSes.deviceProp.minor * 0.1;
+			if (check>compCap){
+				compCap=check;
+				if(check>rSes.dMasterCalcVer){
+					rSes.dMasterCalcVer=check;
+					rSes.iMasterCalcHw=device;
+				}
 			}
 		}
+		return compCap;
 	}
-	if(compCap<2.0) { 
-		rSes.bCUDAavailable=false;
-		++rSes.iWarnings;
-		printf("%3.1f capable CUDA device(s) located\n", compCap); 
-		}
-	else {
-		rSes.bCUDAavailable=true;
-		printf("%3.1f capable CUDA device(s) located\n", compCap); 
-	}
-
-	if(rSes.bCUDAavailable)
-		return 1; // available
-	else
+	else 
 		return 0; // not available
 }
 

@@ -2,7 +2,7 @@
 #include "stdafx.h"
 #include "cuPrintf.cu"
 
-extern int gDebugLvl, gDevDebug, iWarnings, iErrors, gTrace;
+extern int gDebugLvl, gDevDebug, gTrace;
 extern float gElapsedTime, gKernelTimeTally;
 
 // device-global variables to facilitate data transfer
@@ -43,6 +43,7 @@ int knlBackProp(struct rohanContext& rSes, long lSampleQtyReq, long o, char Opti
 	
 		cudaEventCreate( &start);
 		cudaEventCreate( &stop);
+	//cudaPrintfInit();
 
 		cudaEventRecord( start, 0);
 	mtkBackPropMT<<< iBlocks , iThreads >>>( lSampleQtyReq, o, Option);
@@ -55,7 +56,8 @@ int knlBackProp(struct rohanContext& rSes, long lSampleQtyReq, long o, char Opti
 		cudaEventElapsedTime( &gElapsedTime, start, stop);
 		gKernelTimeTally+=gElapsedTime;
 
-	//if(gDevDebug)conPrintf(">>DEVICE: Time to complete BackProp kernel(%c): %3.1f ms\n", Option, gElapsedTime);
+	//cudaPrintfDisplay(rSes.deviceBucket, true);
+	//cudaPrintfEnd();
 		cudaEventDestroy( start);
 		cudaEventDestroy( stop);
 
@@ -71,8 +73,8 @@ __global__ void mtkBackPropMT( long lSampleQtyReq, long o, char Option)
 // Option I - perform corrections for all trainable samples; may assume FFE has just happened/classify based on intra-iteration weights YY
 	
 	//if(threadIdx.x==0){
-	//	printf(">>DEVICE: mtkBackPropMT( long %d, long %d, char %c);\n", lSampleQtyReq, o, Option);
-	//	printf(">>DEVICE: mtkTestProp Wall= %08lX\n", subkCrc32buf((char*)(devNet.Wt), MAXWEIGHTS * 16) );
+	//	cuPrintf(">>DEVICE: mtkBackPropMT( long %d, long %d, char %c);\n", lSampleQtyReq, o, Option);
+	//	cuPrintf(">>DEVICE: mtkTestProp Wall= %08lX\n", subkCrc32buf((char*)(devNet.Wt), MAXWEIGHTS * 16) );
 	//}
 	devlTrainable=0; // reset global mem trainable counter
 
@@ -116,204 +118,6 @@ __device__ void subkBackPropRoptMT(long lSampleQtyReq, long o)
 		devNet.Wt[index]=myDevNet.Wt[index]; // copy to global back from shared memory
 	}
 }	// exit to allow eval kernel
-
-
-__device__ void subkBackPropRoptMTBeta(long lSampleQtyReq, long o)
-{/*! perform corrections for all trainable samples; may assume FFE has just happened/classify based on pre-iteration weights  */
-	//
-	// externalities: const devSes, const devLearn, devNet
-
-	__shared__  __align__(16) struct rohanNetwork myDevNet; //set up copy in highest speed shared memory
-	__shared__  __align__(16) double dSqrErr[10000]; //set up copy in highest speed shared memory
-
-	long index, sindex; // for warpwise loops
-	long OUTROWLEN=devLearn.iOutputQty+1; // prepare array index and width
-	long tIx = threadIdx.x + blockDim.x * blockIdx.x; // tIx is thread index over the kernel
-	long lTotalThreads = gridDim.x * blockDim.x; // total number of threads
-	double maxSquared = devSes.dMAX * devSes.dMAX ; //needed to compart to stored delta squared values
-	
-	myDevNet=devNet; // copy contents to shared memory for speed
-	//for (long offset=0; (index =offset+tIx)< MAXWEIGHTS ; offset+=lTotalThreads){ // iterate over weights
-	//	myWt[index]=devNet.Wt[index]; // copy from global to shared memory
-	//}
-	for (long offset=0; ( sindex =offset+tIx)< lSampleQtyReq ; offset+=lTotalThreads){ // sndex stands for s
-		dSqrErr[sindex]=devLearn.gpudSqrErr[IDX2C( o, sindex, OUTROWLEN )];
-	}
-	__syncthreads();
-	for (long s=0; s<lSampleQtyReq; ++s){ // iterate over samples
-		//  It is assumed that FFE has just taken place prior to this call
-		if( dSqrErr[s] > maxSquared ){ // if the MAX criterion is exceeded	
-			if(tIx==0){
-				++devlTrainable; // increment the counter				
-			}
-			// do backprop
-			//subkBackPropSoptMThread( s, true, myDevNet, myDevNet.Signals, myDevNet.Zs, myDevNet.Wt, myDevNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
-
-			//__device__ void subkBackPropSoptMThread(long s, int o, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
-			{rohanNetwork& Net = myDevNet; cuDoubleComplex * Wt = Net.Wt; cuDoubleComplex * XInputs = devLearn.gpuXInputs; cuDoubleComplex * YEval = devLearn.gpuYEval; double * dYEval = devLearn.gpudYEval;
-				/*! propagates adjustment of weights backwards preceeding layers from the chosen network output. */
-				// s is sample's index
-				//
-				// works with 32, 64, 128, 256, or 512 threads on 1 block  5/24/12 - problem with RMSE 5/26/12
-				// externalities: devSes, devLearn
-				//
-				{
-					// proceed with single-warp, multithread backprop procedure
-					long kindex; // for warpwise loops
-					/* clear all temp values BP0 */
-					__shared__  __align__(16) cuDoubleComplex Signals[MAXNEURONS], Zs[MAXNEURONS], Deltas[MAXNEURONS];
-					/* re-evaluate sample to load temp values. BPI */
-					// this sample eval includes __syncthreads() internally
-					subkEvalSampleMTGamma( devSes, s, Net, o, Signals, Zs, Wt, XInputs, YEval, dYEval, devLearn.gpudSqrErr);
-					/* begin error calculation. BPII */
-					// Deltastar /* measured error at the chosen network output. */ ;
-					/* calc top layer deltas. */
-					long TOP=Net.iLayerQty-1;
-					int ROWLEN=Net.iNeuronQTY[TOP];
-					//for(int i=0; i<Net.iNeuronQTY[TOP]; ++i){
-					for (long offset=0; (index =offset+tIx)< Net.iNeuronQTY[TOP] ; offset+=lTotalThreads){ // index stands for i
-						 // delta-star = D - Y = Desired output minus actual output from evaluation
-						 // D is the cplx coords of the sector of the desired answer		Y is the complex result of evaluation of the given sample, unactivated. */
-						cuDoubleComplex Deltastar = CxSubtractCxUT( 
-										devLearn.gpuDOutputs[ IDX2C( index, s, ROWLEN ) ], 
-										Signals[Net.iNeuronOfst[TOP]+index] );
-						 /* divide the correction; delta = alpha * delta-star / n+1 (but alpha is always 1 for now). */
-						//Deltas[Net.iNeuronOfst[TOP]+index] = CxDivideRlUT( Deltastar, Net.iDendrtQTY[TOP] );
-						Deltas[Net.iNeuronOfst[TOP]+index] = CxMultiplyRlUT( Deltastar, Net.dINV_S[TOP] );
-					}
-					/* Now distribute the correction to lower layers if any. BPII.1 */
-					if (Net.iLayerQty>2){  /* remember layer 0 = inputs, layer 1 = bottom row, layer {2..iLayerQty-2} = middle row, layer iLayerQty-1 = top row. */
-						for (int L=Net.iLayerQty-1; L>1; --L){
-							long LAY = L; /* setup access to layers. */
-							long TRIB = L-1; /* trib for tributary.*/
-							int iTributQTY=Net.iNeuronQTY[TRIB];
-							//int Sj=Net.iDendrtQTY[TRIB]; if (TRIB==1) Sj=1; // Sj=1 for firest hidden layer
-							for (int i=1; i<Net.iNeuronQTY[LAY]; ++i) { // skip 0th neuron as its weights are either 1 (div identity) or 0 (div forbidden) and don't change anyway
-								// k index must begin at 1, neuron zero not valid for correction
-								//for (int k=1; k<iTributQTY; ++k) { /* the contribution to ith neuron's kth tributary's delta = i's delta/i's weight k. */
-								for (long offset=1; ( kindex =offset+tIx)< iTributQTY ; offset+=lTotalThreads){ // kindex stands for k
-												  Deltas[Net.iNeuronOfst[TRIB]+kindex] 
-									= CxAddCxUT ( Deltas[Net.iNeuronOfst[TRIB]+kindex] , 
-										CxDivideCxUT( 
-											Deltas[Net.iNeuronOfst[LAY]+i] , 
-											Wt[IDX2C( Net.iWeightOfst[LAY]+kindex, i, iTributQTY )] ));
-								}
-								//__syncthreads(); YY
-							}
-							// k index must begin at 1, neuron zero not valid for correction
-							//for (int k=1; k<iTributQTY; ++k) { /* contributions accumulated, now divide by dendrites+1. */
-							for (long offset=1; ( kindex =offset+tIx)< iTributQTY ; offset+=lTotalThreads){ // kindex stands for k
-								//cuDoubleComplex preDiv=Deltas[Net.iNeuronOfst[TRIB]+kindex]; // diagnostic purpose only, remove if removing other diags
-								//Deltas[Net.iNeuronOfst[TRIB]+kindex] 
-								//	= CxDivideRlUT( 
-								//		Deltas[Net.iNeuronOfst[TRIB]+kindex] , 
-								//		Sj );
-								Deltas[Net.iNeuronOfst[TRIB]+kindex] 
-									= CxMultiplyRlUT( 
-										Deltas[Net.iNeuronOfst[TRIB]+kindex] , 
-										Net.dINV_S[TRIB] );
-							}
-						}
-					}
-					/* error distribution completed */
-					/* and now update the weights BP III */
-					/* adj weights on first hidden layer. */
-						int FHID = 1;
-						int SIG = 0;
-						int iSignalQTY=Net.iNeuronQTY[SIG]; //rSes.rLearn->iInputQty+1;
-						int iHidWidth=Net.iNeuronQTY[FHID];
-					for (int k=1; k<iHidWidth; ++k){
-						//for (int i=0; i<iSignalQTY; ++i){  
-						for (long offset=0; ( index =offset+tIx)< iSignalQTY ; offset+=lTotalThreads){ // index stands for i
-							/* dW=d*xbar/s1/|z|= neuron's delta * input's conjugate / ( dendrites+1 * abs of input i ). */
-										Wt[IDX2C( Net.iWeightOfst[FHID]+index, k, iSignalQTY )]
-							=CxAddCxUT( Wt[IDX2C( Net.iWeightOfst[FHID]+index, k, iSignalQTY )] , 
-								CxDivideRlUT( 
-									CxMultiplyCxUT( 
-										Deltas[Net.iNeuronOfst[FHID]+k] , 
-										CxConjugateUT( Signals[Net.iNeuronOfst[SIG]+index] ) 
-									) , 
-									CxAbsUT( Zs[Net.iNeuronOfst[FHID]+k] ) // N+1 denominator factor is considered redundant - JAW & IA 2/27/12
-								)
-							);
-						}
-					}
-					/* re-evaluate sample to update temp values. */
-					subkEvalSampleMTGamma( devSes, s, Net, false, Signals, Zs, Wt, XInputs, YEval, dYEval, devLearn.gpudSqrErr);
-					if (Net.iLayerQty>2){
-						 /* now use those outputs' conjugates and the deltas to adjust middle layers. BP III.1 */
-						for (int L=2; L<Net.iLayerQty-1; ++L){
-							 /* setup access to layers. */
-							long LAY = L;
-							long TRIB = L-1;
-							//int iLayWidth=Net.iNeuronQTY[LAY];
-							int iTribWidth=Net.iNeuronQTY[TRIB];
-							for (int k=1; k<Net.iNeuronQTY[LAY]; ++k){
-								//for (int i=0; i<Net.iNeuronQTY[TRIB]; ++i){  
-								for (long offset=0; ( index =offset+tIx)< Net.iNeuronQTY[TRIB] ; offset+=lTotalThreads){ // index stands for i
-									/* the adjustment added to kth neuron's ith trib's weight = k's delta * complex conjugate of i's signal / (abs of k's previous-wt product-sum * dendrites+1)  . */
-												Wt[IDX2C( Net.iWeightOfst[LAY]+index, k, iTribWidth )]
-									=CxAddCxUT( Wt[IDX2C( Net.iWeightOfst[LAY]+index, k, iTribWidth )] , 
-										CxDivideRlUT( 
-											CxMultiplyCxUT( 
-												Deltas[Net.iNeuronOfst[LAY]+k] , 
-												CxConjugateUT( Signals[Net.iNeuronOfst[TRIB]+index] ) 
-											) ,
-											( 
-												CxAbsUT( Zs[Net.iNeuronOfst[LAY]+k] ) // N+1 denominator factor is considered redundant - JAW & IA 2/27/12
-											)
-										)
-									);
-								}
-							}
-							/* layer is complete. */
-							subkEvalSampleMTGamma( devSes, s, Net, true, Signals, Zs, Wt, XInputs, YEval, dYEval, devLearn.gpudSqrErr);
-						}
-					}
-					/* correct output layer BP III.3 */
-					long SUB = TOP-1; 
-					//int iTopWidth=Net.iNeuronQTY[TOP];
-					int iSubWidth=Net.iNeuronQTY[SUB];
-					for (int k=1; k<Net.iNeuronQTY[TOP]; ++k){
-						//for (int i=0; i<Net.iNeuronQTY[SUB]; ++i){  
-						for (long offset=0; ( index =offset+tIx)< Net.iNeuronQTY[SUB] ; offset+=lTotalThreads){ // index stands for i
-							/* For last layer only, adjustment to kth neuron's ith weight = k's delta * complex conjugate of i's signal / ( dendrites+1)  . */
-										Wt[IDX2C( Net.iWeightOfst[TOP]+index, k, iSubWidth )]
-							=CxAddCxUT( Wt[IDX2C( Net.iWeightOfst[TOP]+index, k, iSubWidth )] , 
-								CxMultiplyCxUT( 
-									Deltas[Net.iNeuronOfst[TOP]+k] , 
-									CxConjugateUT( Signals[Net.iNeuronOfst[SUB]+index] ) 
-								)
-							);  // N+1 denominator factor is considered redundant - JAW & IA 2/27/12
-						}
-					}
-					/* backprop is complete. */
-				//	/* re-evaluate sample to get new yields. BPIV */
-				//	subkEvalSampleBetaMT( devSes, s, Net, o, Signals, Zs, Wt, XInputs, YEval, dYEval, devLearn.gpudSqrErr);
-				//	 now, re-calculate delta-star for each output and ensure that value is zero (at least when alpha is 1) BPV
-				//	for(int i=0; i<Net.iNeuronQTY[TOP]; ++i){
-				//	for (long offset=0; ( index =offset+tIx)< Net.iNeuronQTY[TOP] ; offset+=lTotalThreads){ // index stands for i
-				//		  delta-star = D - Y = Desired output minus actual output from evaluation
-				//		  D is the cplx coords of the sector of the desired answer		Y is the complex result of evaluation of the given sample. */
-				//		Deltastar = CxSubtractCxUT( devLearn.gpuDOutputs[ IDX2C( index, s, ROWLEN ) ], 
-				//			Net.gpuSectorBdry[(int) dYEval[ IDX2C( index, s, ROWLEN ) ] ] );
-				//		 delta-star = D - Y = Desired output minus actual output from evaluation
-				//		double D =  devLearn.gpudDOutputs[ IDX2C( index, s, ROWLEN ) ];
-				//		double Y = dYEval[ IDX2C( index, s, ROWLEN ) ];
-				//	return iReturn; /* number of weights updated. */
-				}
-				// execution returns from Multi-Warp version
-			}
-
-		}
-	}
-	// weight adjustment loop ends, return weights to global mem for evaluate kernel
-
-	for (long offset=0; (index =offset+tIx)< MAXWEIGHTS ; offset+=lTotalThreads){ // iterate over weights
-		devNet.Wt[index]=myDevNet.Wt[index]; // copy to global back from shared memory
-	}
-	// exit to allow eval kernel
-} 
 
 
 __device__ void subkBackPropSoptMThread(long s, int o, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
@@ -698,10 +502,10 @@ double knlFFeRmseOpt(struct rohanContext& rSes, long lSampleQtyReq, long o, char
 	cudaMemcpyToSymbol( "devdRMSE", &dTotal, sizeof(double) );
 		mCheckCudaWorked
 
-	cudaPrintfInit();
+	//cudaPrintfInit();
 	mtkFFeRmseOptMT<<< iBlocks , iThreads >>>( lSampleQtyReq, o, Option);
-	cudaPrintfDisplay(stdout, true);
-	cudaPrintfEnd();
+	//cudaPrintfDisplay(rSes.deviceBucket, true);
+	//cudaPrintfEnd();
 
 	cudaMemcpyFromSymbol( &dTotal, "devdRMSE", sizeof(double) );
 		mCheckCudaWorked
@@ -713,6 +517,7 @@ double knlFFeRmseOpt(struct rohanContext& rSes, long lSampleQtyReq, long o, char
 	if(gDevDebug)conPrintf(">>DEVICE: Time to complete FFeRMSE kernel(%c): %3.1f ms\n", Option, gElapsedTime);
 		cudaEventDestroy( start);
 		cudaEventDestroy( stop);
+		//fprintf(rSes.deviceBucket, "RETURN: %f\t%f\n", dTotal, sqrt(dTotal/lSampleQtyReq) );
 	return rSes.dDevRMSE=sqrt(dTotal/lSampleQtyReq);
 }
 
@@ -759,77 +564,6 @@ __global__ void mtkFFeRmseOptMT( long lSampleQtyReq, long o, char Option)
 }
 
 
-__device__ void subkEvalSampleMTGamma(rohanContext& Ses, long s, rohanNetwork& Net, int o, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval, double * dSqrErr)
-{// Beta uses fixed length fields instead of nested pointer layers
-	// delta squared is not updated, since they'll be updated when RMSE is checked at the end of a pass through the learning set
-	//
-	//	externalities: read devLearn
-	//
-	// this functions needs to work with single full warps only at this time 5/6/2012
-	// M is for multiple threads per sample, typically as part of backprop
-
-	long index, kindex; // for warpwise loops
-	long tIx = threadIdx.x + blockDim.x * blockIdx.x; // tIx is thread index over the kernel
-	long lTotalThreads = gridDim.x * blockDim.x; // total number of threads
-	
-	/*! layer zero (inputs) is special. */
-	long INROWLEN=Net.iNeuronQTY[0];
-
-	for (long offset=0; (index =offset+tIx)< MAXNEURONS ; offset+=lTotalThreads){ // index stands for i
-		Signals[Net.iNeuronOfst[0]+index]= gpuZero;
-		if(index < INROWLEN)
-			Signals[Net.iNeuronOfst[0]+index]= XInputs[IDX2C( index, s, INROWLEN )];
-	}
-	__syncthreads();
-	//for (long offset=0; (index =offset+tIx)< INROWLEN ; offset+=lTotalThreads){ // index stands for i
-	//	Signals[Net.iNeuronOfst[0]+index]= XInputs[IDX2C( index, s, INROWLEN )];
-	//}
-	//__syncthreads();
-	 /*! middle and top layers. */
-	for (int L=1; L<Net.iLayerQty; ++L){
-		//struct rohanLayer& lay = Net.rLayer[L];
-		long LAY=L;
-		int TRIB=L-1; // index of previous layer
-		int iNeuronQTY=Net.iNeuronQTY[LAY];
-		int iSignalQTY=Net.iDendrtQTY[LAY]; // signal qty depends on size of previous layer
-		//for (int k=0; k<iNeuronQTY; ++k){ //Neuron zero is not skipped, its output should be 1+0i as a check
-		for (long offset=0; (kindex =offset+tIx)< iNeuronQTY ; offset+=lTotalThreads){ // kindex stands for k
-			Zs[Net.iNeuronOfst[LAY]+kindex]=gpuZero;
-			for (int i=0; i<iSignalQTY; ++i){ //walk weights on inputs from previous layer
-			   			   Zs[Net.iNeuronOfst[LAY]+kindex] = 
-				CxAddCxUT( Zs[Net.iNeuronOfst[LAY]+kindex] , 
-					CxMultiplyCxUT(
-						Wt[IDX2C( Net.iWeightOfst[LAY] + i, kindex, iSignalQTY )],
-						Signals[Net.iNeuronOfst[TRIB]+i] ) ) ;
-			}
-			// ACTIVATE //
-			Signals[Net.iNeuronOfst[LAY]+kindex] = CxActivateUT( Zs[Net.iNeuronOfst[LAY]+kindex], Net);
-		}
-	}
-	__syncthreads();
-	/*! last layer values are converted and stored here */
-	long TOP = Net.iLayerQty-1;
-	long OUTROWLEN=Net.iNeuronQTY[TOP];
-	//for (int i=0; i<Net.iNeuronQTY[TOP]; ++i){ // continuous conversion begins here 
-	for (long offset=0; (index =offset+tIx)< OUTROWLEN ; offset+=lTotalThreads){ // index stands for i
-		YEval[IDX2C( index, s, OUTROWLEN )]
-			= Signals[Net.iNeuronOfst[TOP]+index] ; // store final complex output(s)
-		dYEval[IDX2C( index, s, OUTROWLEN )]
-			= FUnitCxUT( YEval[IDX2C( index, s, OUTROWLEN )] ) * Net.iSectorQty; // convert final complex outputs to sectors and store that
-		if(devLearn.iContOutputs==false) // round off decimal if disc outputs is set
-			dYEval[IDX2C( index, s, OUTROWLEN )]
-				= int(dYEval[IDX2C( index, s, OUTROWLEN )]);
-		//
-		///  Deltas not updated during backprop, which is what this eval method is for
-		//
-		//double dDelta=abs( devLearn.gpudDOutputs[IDX2C( index, s, OUTROWLEN )]-dYEval[IDX2C( index, s, OUTROWLEN )] ); 
-		//if(dDelta>(double)(devNet.iSectorQty/2)) // if error arc is greater than half
-		//	dDelta=((double)devNet.iSectorQty-dDelta); // set delta to the lesser arc length
-		//dSqrErr[IDX2C( index, s, OUTROWLEN )]=dDelta*dDelta; // save delta squared
-	}
-	/*! end of sample evaluation. */
-	__syncthreads();
-}
 __device__ void subkEvalSampleBetaMT(rohanContext& Ses, long s, rohanNetwork& Net, int o, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval, double * dSqrErr)
 {// Beta uses fixed length fields instead of nested pointer layers
 	// delta squared is not updated, since they'll be updated when RMSE is checked at the end of a pass through the learning set
@@ -1020,10 +754,9 @@ __device__ void subkRmseMT(long lSampleQtyReq, long o, int OUTROWLEN, double * d
 __device__ void subkRmseMTBeta(long lSampleQtyReq, long o, int OUTROWLEN, double * dSqrErr)
 {/*! sums all SE values for oth input */
 	//	externalities 
-	//				write devdReturn, devdRMSE
+	//				write devdRMSE
 	//
-	//	may need to run in full warp quantities of threads
-	//	verified for 2 samples 5/23/12
+	//	verified for 10k samples 6/21/12
 	
 	__shared__ __align__(16)double dReturn[1024];
 	long row;//, OUTROWLEN=devLearn.iOutputQty+1; // prepare array index and width
@@ -1031,12 +764,9 @@ __device__ void subkRmseMTBeta(long lSampleQtyReq, long o, int OUTROWLEN, double
 	long lTotalThreads = gridDim.x * blockDim.x; // total number of threads
 	
 	dReturn[threadIdx.x]=0.0;
-	//devdReturn[tIx]=0.0; // clear global mem accumulator; out of bound samples will remain at this value
 
 	for (long k=0; (row=k+tIx)<lSampleQtyReq; k+=lTotalThreads){ // advance thread qty samples each time, falling out if row is beyond bounds
 		dReturn[threadIdx.x]+= dSqrErr[IDX2C( o, row, OUTROWLEN )]; // accumulate the delta squared for the indicated sample
-		//devdReturn[tIx]+= dSqrErr[IDX2C( o, row, OUTROWLEN )]; // accumulate the delta squared for the indicated sample
-		//if(gDevDebug) printf("[%d]=%f\t", tIx, dSqrErr[IDX2C( o, row, OUTROWLEN )]);
 	}
 	//end linear accumulation, begin intra-block reduction
 	__syncthreads(); // crucial placement
@@ -1045,16 +775,14 @@ __device__ void subkRmseMTBeta(long lSampleQtyReq, long o, int OUTROWLEN, double
 	while (j){ // as long as half is still at least one
 		if (threadIdx.x < j || tIx+j < lSampleQtyReq){ // select for bottom half AND make sure that upper half is not beyond working samples
 			dReturn[threadIdx.x] += dReturn[threadIdx.x+j]; // add the top half values to their bottom half counterparts
-			//devdReturn[tIx] += devdReturn[tIx+j]; // add the top half values to their bottom half counterparts
 		}
 		__syncthreads(); // crucial placement
 		j /=2; // divide bottom half into halves and do it again
 	}
 	
-	// all threads' values in a given block are now accumulated in its 0th thread's devdReturn[s]
+	// all threads' values in a given block are now accumulated in its 0th thread's dReturn element
 	if(threadIdx.x==0){ // calling on each 0th thread
 		atomicAdd(&devdRMSE, dReturn[0]); // accumulate each block's total atomically
-		//cuPrintf("dReturn[0]= %f\n", dReturn[0]);
 	}	
 }
 

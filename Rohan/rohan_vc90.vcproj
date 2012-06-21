@@ -368,7 +368,7 @@
 	</References>
 	<Files>
 		<Filter
-			Name="src"
+			Name="Source Files"
 			Filter="cu;cpp;c;cxx;def;odl;idl;hpj;bat;asm;asmx"
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
@@ -381,7 +381,7 @@
 				>
 			</File>
 			<File
-				RelativePath=".\Complex-math-func.cpp"
+				RelativePath=".\Complex-math.cpp"
 				>
 			</File>
 			<File
@@ -425,74 +425,78 @@
 				>
 			</File>
 			<File
-				RelativePath=".\ShowMe.cpp"
-				>
-			</File>
-			<File
 				RelativePath=".\stdafx.cpp"
 				>
 			</File>
+			<File
+				RelativePath=".\WinUnix.cpp"
+				>
+			</File>
 		</Filter>
-		<File
-			RelativePath=".\cBarge.h"
+		<Filter
+			Name="Header Files"
 			>
-		</File>
-		<File
-			RelativePath=".\cDrover.h"
-			>
-		</File>
-		<File
-			RelativePath=".\Complex-math-func.h"
-			>
-		</File>
-		<File
-			RelativePath=".\crc.h"
-			>
-		</File>
-		<File
-			RelativePath=".\cTeam.h"
-			>
-		</File>
-		<File
-			RelativePath=".\Kernels.cuh"
-			>
-		</File>
-		<File
-			RelativePath=".\Rohan-data.h"
-			>
-		</File>
-		<File
-			RelativePath=".\Rohan-io.h"
-			>
-		</File>
-		<File
-			RelativePath=".\Rohan-kernel.h"
-			>
-		</File>
-		<File
-			RelativePath=".\Rohan-learn.h"
-			>
-		</File>
-		<File
-			RelativePath=".\Rohan.h"
-			>
-		</File>
-		<File
-			RelativePath=".\ShowMe.h"
-			>
-		</File>
-		<File
-			RelativePath=".\sniptype.h"
-			>
-		</File>
-		<File
-			RelativePath=".\stdafx.h"
-			>
-		</File>
-		<File
-			RelativePath=".\targetver.h"
-			>
-		</File>
+			<File
+				RelativePath=".\cBarge.h"
+				>
+			</File>
+			<File
+				RelativePath=".\cDrover.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Complex-math.h"
+				>
+			</File>
+			<File
+				RelativePath=".\crc.h"
+				>
+			</File>
+			<File
+				RelativePath=".\cTeam.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Kernels.cuh"
+				>
+			</File>
+			<File
+				RelativePath=".\Rohan-data.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Rohan-io.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Rohan-kernel.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Rohan-learn.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Rohan.h"
+				>
+			</File>
+			<File
+				RelativePath=".\sniptype.h"
+				>
+			</File>
+			<File
+				RelativePath=".\stdafx.h"
+				>
+			</File>
+			<File
+				RelativePath=".\targetver.h"
+				>
+			</File>
+			<File
+				RelativePath=".\WinUnix.h"
+				>
+			</File>
+		</Filter>
 	</Files>
 	<Globals>
 	</Globals>

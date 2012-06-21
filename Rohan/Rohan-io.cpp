@@ -1,7 +1,7 @@
 /* Includes, cuda */
 #include "stdafx.h"
 
-extern int gDebugLvl, iWarnings, iErrors, gTrace;
+extern int gDebugLvl, gTrace;
 extern long bCUDAavailable;
 
 
@@ -56,7 +56,7 @@ long BinaryFileHandleWrite(char *sFileName, FILE **fileOutput)
 
 int AsciiFileHandleRead(char *sFileName, FILE **fileInput)
 {mIDfunc/// Opens a file for reading in ASCII mode, typically the .txt learning set file.
-	*fileInput = fopen(sFileName, "r");  /* Open in ASCII mode */
+	*fileInput = fopen(sFileName, "r");  /* Open in ASCII read mode */
 	if (*fileInput == NULL) {
 		fprintf(stderr, "Error opening %s for reading.\n", sFileName);
 		return 0;
@@ -64,14 +64,23 @@ int AsciiFileHandleRead(char *sFileName, FILE **fileInput)
 	else return 1;
 }
 
-long AsciiFileHandleWrite(char *sFileName, FILE **fileOutput)
+int AsciiFileHandleWrite(char *sFilePath, char *sFileName, FILE **fileOutput)
 {mIDfunc/// Opens a file for writing in ASCII mode, typically to record results of a learning session and/or to save human-readable weight values.
-	*fileOutput = fopen(sFileName, "w");  /* Open in ASCII mode */
-	if (*fileOutput == NULL) {
-		fprintf(stderr, "Error opening %s for writing.\n", sFileName);
-		return 0;
+	char sString[MAX_PATH];
+
+	if(DirectoryEnsure(sFilePath)){
+		sprintf(sString, "%s\\%s", sFilePath, sFileName);
+		*fileOutput = fopen(sString, "w");  /* Open in ASCII write mode */
+		if (*fileOutput == NULL) {
+			errPrintf("Error opening %s for writing.\n", sString);
+			return false;
+		}
+		else return true;
 	}
-	else return 1;
+	else{
+		errPrintf("Error making %s for writing.\n", sFilePath);
+		return false;
+	}
 }
 
 
@@ -306,3 +315,4 @@ long AsciiWeightDump(struct rohanContext& rSes, FILE *fileOutput)
 	fclose(fileOutput);
 	return lReturnValue;
 }
+

@@ -12,9 +12,10 @@
 #define IDX2C( i, j, ld) ((i)+(( j )*( ld )))
 
 // Project defines and constants
-#define MAXLAYERS 4
+#define MAXLAYERS 3
 #define MAXWEIGHTS 1024
 #define MAXNEURONS 256
+#define MAXSHARED 48*1024
 #define _USE_MATH_DEFINES
 #define ONE_PI 3.14159265358979323846264338327950288
 #define TWO_PI 6.283185307179586476925286766558
@@ -156,9 +157,10 @@ typedef struct rohanContext
 	struct rohanLearningSet * devLearn /*! dev space learning set currently in use for session. */;
 	struct rohanContext * devSes /*! dev space learning set currently in use for session. */;
 	class cDeviceTeam * ctDraftTeam /*! The calculating "engine" currently in use. */;
-	FILE *debugHandle /*! handle used for writing large volumes of diagnostic information */;
+	FILE *deviceBucket /*! handle used for writing large volumes of diagnostic information to device */;
+	FILE *hostBucket /*! handle used for writing large volumes of diagnostic information to host */;
 	std::ofstream * ofsRLog /*! handle used for writing terse updates to RohanLog.txt. */;
-	char sLogPath[256] /*! String for path to directory where RohanLog.txt is to be written. */;
+	char sRohanVerPath[256] /*! path to Rohan dir in Documents */;
 	char sConfigFileOpt[256] /*! String to parse for config file options. XX */;
 	char sCLargsOpt[256] /*! String to parse for command line arguments. XX  */;
 	char sLearnSetSpecOpt[256] /*! String to parse for special learning set guidelines. XX */;

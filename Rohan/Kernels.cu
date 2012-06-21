@@ -19,7 +19,7 @@
 /* Project includes */
 #include "Rohan.h"
 
-extern int iDebugLvl, iDevDebug, iWarnings, iErrors, iTrace;
+extern int iDebugLvl, iDevDebug, iTrace;
 extern float gElapsedTime, gKernelTimeTally;
 
 // device-global variables to facilitate data transfer

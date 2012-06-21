@@ -10,12 +10,12 @@ class cDrover
 		class cDeviceTeam * Team /*! The calculating "engine" currently in use. */;
 	public:
 		class cBarge * Barge /*! The data-holding "object" currently in use. */;
-		
-		cDrover( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& rN, cBarge& cB, cDeviceTeam& cdT){ SetContext(rC, rL, rN); SetDroverBargeAndTeam(cB, cdT); ShowMe(); } ; // end ctor
+		cDrover( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& rN, cBarge& cB, cDeviceTeam& cdT){ SetContext(rC, rL, rN); SetDroverBargeAndTeam(cB, cdT); /*ShowMe();*/ }; // end ctor
 			void ShowMe();
-			long SetContext( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& rN); // completed
-		long DoAnteLoop(int argc, char * argv[]); /// prepares all parameters and data structures necesary for learning and evaluation.
+			long SetContext( struct rohanContext& rC, struct rohanLearningSet& rL, struct rohanNetwork& rN); // completed
 			long SetDroverBargeAndTeam( class cBarge& cbB, class cDeviceTeam& cdtT); // completed
+		long DoAnteLoop(int argc, char * argv[]); /// prepares all parameters and data structures necesary for learning and evaluation.
+			int SetProgOptions(struct rohanContext& rSes, int argc, char * argv[]); // interprets command line options
 			long ObtainGlobalSettings(struct rohanContext& rSes); /// sets initial and default value for globals and settings
 			long AskSampleSetName(struct rohanContext& rSes) ;  /// chooses the learning set to be worked with Ante-Loop
 			long ShowDiagnostics(struct rohanContext& rSes, struct rohanNetwork& rNet); /// show some statistics, dump weights, and display warning and error counts
@@ -39,12 +39,13 @@ class cDrover
 //int GetGlobalSettings(struct rohanContext& rSes);
 int BeginSession(struct rohanContext& rSes);
 
-	//long cuFreeNNTop(struct rohanContext &rSes);
 int GetWeightSet(struct rohanContext& rSes);
 int GetSampleSet(struct rohanContext& rSes);
 int ReGetSampleSet(struct rohanContext& rSes);
 int PrepareNetwork(struct rohanContext& rSes);
-//void MainLoop(struct rohanContext& rSes);
+int DirectoryEnsure(char * sPath);
+int GetUserDocPath(char * sPath);
+
 
 //int InteractiveEvaluation(struct rohanContext& rSes);
 //int InteractiveLearning(struct rohanContext& rSes);

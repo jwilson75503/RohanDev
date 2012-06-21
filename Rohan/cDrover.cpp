@@ -3,9 +3,11 @@
 #include <boost/timer/timer.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp> //include all types plus i/o
 #include <boost/date_time/gregorian/gregorian.hpp> //include all types plus i/o
+#include <boost/program_options.hpp>
 using namespace boost::timer;
 using namespace boost::posix_time;
 using namespace boost::gregorian;
+namespace po = boost::program_options;
 //#include <boost/filesystem.hpp>
 //using namespace boost::filesystem;
 #if defined (_INTEGRAL_MAX_BITS) &&  _INTEGRAL_MAX_BITS >= 64
@@ -15,7 +17,7 @@ typedef unsigned __int64 uint64;
 #error __int64 type not supported
 #endif
 
-extern int gDebugLvl, gDevDebug, iWarnings, iErrors, gTrace;
+extern int gDebugLvl, gDevDebug, gTrace;
 extern long bCUDAavailable;
 extern float gElapsedTime, gKernelTimeTally;
 
@@ -62,52 +64,117 @@ long cDrover::DoAnteLoop(int argc, char * argv[])
 {mIDfunc /// This function prepares all parameters and data structures necesary for learning and evaluation.
 	int iReturn=1;
 	
-	strcpy(rSes->sCLargsOpt, "blank");
-	strcpy(rSes->sConfigFileOpt,"blank");
-	strcpy(rSes->sConsoleOpt,"blank");
-	strcpy(rSes->sLearnSetSpecOpt,"blank");
-		
-	if (argc) {
-		rSes->bConsoleUsed=false;
-		rSes->bCLargsUsed=true;
-		//strcpy(rSes->sCLargsOpt, argv[0]); // point to first argument
-		// call function to parse CLI args here
-	}
-	else {
-		rSes->bConsoleUsed=true;
-		rSes->bCLargsUsed=false;
-	} /// potentially abusable 
+	SetProgOptions( *rSes, argc, argv);
+	ObtainGlobalSettings( *rSes);		
+	printf("Rohan v%s Neural Network Simulator\n", VERSION);
+	if(iReturn*=ShowDiagnostics( *rSes, *rSes->rNet ))
+			iReturn*=Barge->ShowDiagnostics();
 
-	printf("Rohan v%s Neural Network Application\n", VERSION);
-	cutilSafeCall( cudaSetDevice(0) ); /// all cuda calls to run on unit 0 until highest compute capability device located
-	if (Team->CUDAverify(*rSes)){
-		//cutilSafeCall( cudaSetDevice(rSes->iMasterCalcHw) ); /// all cuda calls to run on highest compute capability device located
-		cout << "CUDA present, device " << rSes->iMasterCalcHw << " selected." << endl;
-		if (iReturn*=ObtainGlobalSettings(*rSes))
-			if(iReturn*=ShowDiagnostics( *rSes, *rSes->rNet ))
-				iReturn*=Barge->ShowDiagnostics();
-		}
-	else {
-		fprintf(stderr, "Warning: No CUDA hardware or no CUDA functions present.\n", ++rSes->iWarnings);
-		rSes->iMasterCalcHw=-1;
-		iReturn=0;
-	}
 	return iReturn;
+}
+
+
+int cDrover::SetProgOptions(struct rohanContext& rSes, int argc, char * argv[])
+{mIDfunc /// Declare the supported options.
+    try {
+		// Declare a group of options that will be 
+		// allowed only on command line
+		po::options_description generic("Generic options");
+		generic.add_options()
+			("version,v", "print version string")
+			("help,h", "produce help message")
+			("learn,l", po::value< vector<string> >(), "pursue backprop training in pursuit of target RMSE given MAX criterion")
+			("eval,e", po::value< vector<string> >(), "evaluate samples and report")
+			("tag,t", po::value< vector<string> >(), "tag session with an identifying string")
+            ;
+		    
+		// Declare a group of options that will be 
+		// allowed both on command line and in
+		// config file
+		po::options_description config("Configuration");
+		config.add_options()
+            ("net,n", po::value< vector<string> >(), "network sectors, inputs, 1st hidden layer, 2nd hidden layer, outputs")
+			("samples,s", po::value< vector<string> >(), "text file containing sample input-output sets")
+			("weights,w", po::value< vector<string> >(), ".wgt file containing complex weight values")
+			("include-path,I", 
+				 po::value< vector<string> >()->composing(), 
+				 "include path")
+			;
+
+		// Hidden options, will be allowed both on command line and
+		// in config file, but will not be shown to the user.
+		po::options_description hidden("Hidden options");
+		hidden.add_options()
+			("input-file", po::value< vector<string> >(), "input file")
+			; 
+
+		po::options_description cmdline_options;
+		cmdline_options.add(generic).add(config).add(hidden);
+
+		po::options_description config_file_options;
+		config_file_options.add(config).add(hidden);
+
+		po::options_description visible("Allowed options");
+		visible.add(generic).add(config);
+
+        po::variables_map vm;        
+        po::store(po::parse_command_line(argc, argv, cmdline_options), vm);
+        po::notify(vm);    
+
+        if (vm.count("help")) {
+            cout << visible << "\n";
+            return 1;
+        }
+
+        if (vm.count("version")) {
+            cout << VERSION << ".\n";
+        }
+    }
+    catch(exception& e) {
+        cerr << "error: " << e.what() << "\n";
+        return 1;
+    }
+    catch(...) {
+        cerr << "Exception of unknown type!\n";
+    }
+
+    return 0;
 }
 
 
 long cDrover::ObtainGlobalSettings(struct rohanContext& rSes)
 {mIDfunc /// sets initial and default value for globals and settings
 	int iReturn=1;
+	rSes.bConsoleUsed=true;
 	//	globals
 	gTrace=0; 
 	gDebugLvl=0; 
 	// session accrual
 	rSes.iWarnings=0; rSes.iErrors=0; 
 	rSes.lSampleQtyReq=0;
-	strcpy(rSes.sLogPath,"C:\\users\\owner\\documents\\RohanLog.txt");
-	rSes.ofsRLog=new ofstream(rSes.sLogPath, std::ios::app|std::ios::out); 
-	*(rSes.ofsRLog) << "\tSTART Rohan v" << VERSION << " Neural Network Application\n";
+
+	char sPath[MAX_PATH];
+	GetUserDocPath(sPath);
+	
+	sprintf(rSes.sRohanVerPath, "%s\\Rohan_%s", sPath, VERSION);
+		//cout << rSes.sRohanVerPath << "\n";
+
+	if(DirectoryEnsure(rSes.sRohanVerPath)){
+		sprintf(sPath, "%s\\RohanLog.txt", rSes.sRohanVerPath);
+		rSes.ofsRLog=new ofstream(sPath, std::ios::app|std::ios::out); 
+		*(rSes.ofsRLog) << "\tSTART Rohan v" << VERSION << " Neural Network Application\n";
+		using namespace boost::posix_time; 
+		ptime now = second_clock::local_time(); //use the clock
+
+		AsciiFileHandleWrite(rSes.sRohanVerPath, "DevBucket.txt", &(rSes.deviceBucket));
+		//fprintf(rSes.deviceBucket, "%s\tSTART Rohan v%s Neural Network Application\n", "to_simple_string(now)", VERSION);
+		AsciiFileHandleWrite(rSes.sRohanVerPath, "HostBucket.txt", &(rSes.hostBucket));
+		//fprintf(rSes.hostBucket, "%s\tSTART Rohan v%s Neural Network Application\n", "to_simple_string(now)", VERSION);
+	}
+	else {
+		errPrintf("Directory %s could not be createed\n", rSes.sRohanVerPath);
+		++rSes.iWarnings;
+	}
 	// memory structures
 	rSes.lMemStructAlloc=0;
 	// session modes
@@ -132,23 +199,41 @@ long cDrover::ObtainGlobalSettings(struct rohanContext& rSes)
 	rSes.dHostRMSE=0.0;
 	rSes.dDevRMSE=0.0;
 
-	if (iReturn && rSes.bConsoleUsed){
 		if(gTrace) cout << "Tracing is ON.\n" ;
-		if (gDebugLvl) cout << "Debug level is " << gDebugLvl << "\n" ;
-		cout << "Session warning and session error counts reset.\n";
-		rSes.rNet->bContActivation ? cout << "Activation default is CONTINUOUS.\n" : cout << "Activation default is DISCRETE.\n"; 
-		// XX defaulting to false makes all kinds of heck on the GPU
-		rSes.bRInJMode ? cout << "Reversed Input Order is ON.\n" : cout << "Reversed Input Order is OFF.\n"; 
-		// this is working backward for some reason 2/08/11 // still fubared 3/7/12 XX
-		cout << "RMSE stop condition is ON. XX\n"; //
-		cout << "Epoch length is 1000 iterations.\n";
-		cout << rSes.iEvalBlocks << " EVAL Blocks per Kernel, " << rSes.iEvalThreads << " EVAL Threads per Block.\n";
-		cout << rSes.iBpropBlocks << " BPROP Blocks per Kernel, " << rSes.iBpropThreads << " BPROP Threads per Block.\n";
-		cout << "Continuous Inputs true by DEFAULT.\n";
-		cout << "Continuous Outputs true by DEFAULT.\n";
+		if (gDebugLvl){
+			cout << "Debug level is " << gDebugLvl << "\n" ;
+			cout << "Session warning and session error counts reset.\n";
+			rSes.rNet->bContActivation ? cout << "Activation default is CONTINUOUS.\n" : cout << "Activation default is DISCRETE.\n"; 
+			// XX defaulting to false makes all kinds of heck on the GPU
+			rSes.bRInJMode ? cout << "Reversed Input Order is ON.\n" : cout << "Reversed Input Order is OFF.\n"; 
+			// this is working backward for some reason 2/08/11 // still fubared 3/7/12 XX
+			cout << "RMSE stop condition is ON. XX\n"; //
+			cout << "Epoch length is " << rSes.iEpochLength << " iterations.\n";
+			cout << rSes.iEvalBlocks << " EVAL Blocks per Kernel, " << rSes.iEvalThreads << " EVAL Threads per Block.\n";
+			cout << rSes.iBpropBlocks << " BPROP Blocks per Kernel, " << rSes.iBpropThreads << " BPROP Threads per Block.\n";
+			cout << "Continuous Inputs true by DEFAULT.\n";
+			cout << "Continuous Outputs true by DEFAULT.\n";
+		}
+
+	//strcpy(rSes->sCLargsOpt, "blank");
+	//strcpy(rSes->sConfigFileOpt,"blank");
+	//strcpy(rSes->sConsoleOpt,"blank");
+	//strcpy(rSes->sLearnSetSpecOpt,"blank");
+
+	if (Team->CUDAverify(rSes)>=2.0){
+		cutilSafeCall( cudaSetDevice(rSes.iMasterCalcHw) ); /// all cuda calls to run on first device of highest compute capability device located
+		if (gDebugLvl) cout << "CUDA present, device " << rSes.iMasterCalcHw << " selected." << endl;
 	}
-	rSes.bConsoleUsed=true; //XX here for diagnosis only
-	
+	else {
+		if (rSes.dMasterCalcVer>1.0)
+			fprintf(stderr, "Warning: CUDA hardware below Compute Capability 2.0.\n");
+		else
+			fprintf(stderr, "Warning: No CUDA hardware or no CUDA functions present.\n");
+		rSes.iMasterCalcHw=-1;
+		++rSes.iWarnings;
+		iReturn=0;
+	}
+
 	return iReturn;
 }
 
@@ -159,7 +244,7 @@ long cDrover::ShowDiagnostics(struct rohanContext& rSes, struct rohanNetwork& rN
 	int iReturn=1;
 	cuDoubleComplex keepsakeWts[MAXWEIGHTS]; // 16 x 2048
 	
-	AskSampleSetName(rSes);
+	if(rSes.bConsoleUsed)AskSampleSetName(rSes);
 	if(iReturn=Barge->ObtainSampleSet(rSes)){
 		iReturn=Barge->DoPrepareNetwork(rSes);
 		cudaMemcpy( keepsakeWts, rSes.rNet->Wt, 16*MAXWEIGHTS, cudaMemcpyHostToHost); // backup weights for post-test restoration
@@ -293,7 +378,7 @@ int cDrover::ClassifyTest(struct rohanContext& rSes, struct rohanNetwork& rNet, 
 		tDev.resume();
 			gKernelTimeTally=0.0; //reset global kernel time tally
 			// evaluation is now integrated in device classification tests
-			iMargin+=iDeviceTrainable=Team->LetTrainNNThresh(rSes, iSampleQty, 1, 'E', rSes.dTargetRMSE, rSes.iEpochLength);
+			iMargin+=iDeviceTrainable=Team->LetTrainNNThresh(rSes, iSampleQty, 1, 'E', rSes.dTargetRMSE, rSes.iEpochLength, 'D');
 			fDevTime+=gKernelTimeTally; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
 		tDev.stop();
 		Team->LetSlack(rSes);
@@ -303,6 +388,7 @@ int cDrover::ClassifyTest(struct rohanContext& rSes, struct rohanNetwork& rNet, 
 			tHost.resume();
 				cuEvalNNLearnSet(rSes, iSampleQty); // evaluation is now included separately in host classification tests
 				iMargin -= iHostTrainable=TrainNNThresh(rSes, false, iSampleQty);
+				//iMargin -= iHostTrainable=Team->LetTrainNNThresh(rSes, iSampleQty, 1, 'E', rSes.dTargetRMSE, rSes.iEpochLength, 'H');
 			tHost.stop();
 		}
 		printf("BOTH: delta trainable %d += %d - %d\n", iMargin, iDeviceTrainable, iHostTrainable);
@@ -356,7 +442,7 @@ double cDrover::BackPropTest(struct rohanContext& rSes, struct rohanNetwork& rNe
 		// begin BACKPROPagation test DEVICE
 			gKernelTimeTally=0.0; //reset global kernel time tally
 			// evaluation is now integrated in device classification tests
-			iMargin+=iDeviceTrainable=Team->LetTrainNNThresh( rSes, iSampleQty, 1, 'R', rSes.dTargetRMSE, 1); // backprop all samples, output #1, revise wts, target RMSE, epoch=single iteration YY change E to R
+			iMargin+=iDeviceTrainable=Team->LetTrainNNThresh( rSes, iSampleQty, 1, 'R', rSes.dTargetRMSE, 1, 'D'); // backprop all samples, output #1, revise wts, target RMSE, epoch=single iteration YY change E to R
 			dDifferent += Team->GetRmseNN(rSes, iSampleQty);
 			fDevTime+=gKernelTimeTally; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
 		//printf(">>DEVICE: %d samples\n", lSamplesBpropDev);
@@ -401,7 +487,7 @@ long cDrover::AskSampleSetName(struct rohanContext& rSes)
 	int iReturn=0; 
 	//rSes.rLearn->bContInputs=false;
 	//rSes.rLearn->iContOutputs=(int)false;
-	cout << "Samples treated as discrete or continuous by fractionality. XX" << endl;
+	//cout << "Samples treated as discrete or continuous by fractionality. XX" << endl;
 
 	printf("Enter 0 for 10K-set, 9-36-1 weights\n\t 1 for 3-set, 331 weights\n\t 2 for 150-set, no wgts\n\t 3 for 4-set, 2x21 wgts\n\t 4 for 2-1 rand weights");
 	printf("\n\t 5 for 416 samples x 200 inputs\n\t 6 for 10k-set, 9-45-1 weights\n\t 7 for 10k-set, 9-54-1 weights\n");
@@ -743,7 +829,7 @@ long cDrover::LetInteractiveLearning(struct rohanContext& rSes)
 					++iReturn;
 							Team->LetTaut(rSes);
 							//rSes.lSamplesTrainable=knlBackProp( rSes, rSes.lSampleQtyReq, 1, 'R');
-							rSes.lSamplesTrainable=Team->LetTrainNNThresh( rSes, rSes.lSampleQtyReq, 1, 'R', rSes.dTargetRMSE, rSes.iEpochLength);
+							rSes.lSamplesTrainable=Team->LetTrainNNThresh( rSes, rSes.lSampleQtyReq, 1, 'R', rSes.dTargetRMSE, rSes.iEpochLength, 'D');
 		}
 		if (iSelect==7) {printf("Enter blocks per kernel\n");std::cin >> rSes.iBpropBlocks;}
 		if (iSelect==8) {printf("Enter threads per block\n");std::cin >> rSes.iBpropThreads;}
@@ -799,7 +885,7 @@ long cDrover::LetUtilities(struct rohanContext& rSes)
 
 
 void cDrover::RLog(struct rohanContext& rSes, char * sLogEntry)
-{mIDfunc
+{mIDfunc // logs strings describing events, preceeded by the local time
 	using namespace boost::posix_time; 
     ptime now = second_clock::local_time(); //use the clock 
     sLogEntry=strtok(sLogEntry, "\n"); // trim any trailing chars
@@ -829,3 +915,4 @@ long cDrover::DoEndItAll(struct rohanContext& rSes)
 	
 	return iReturn;
 }
+

@@ -45,10 +45,10 @@ class cDeviceTeam// revised to remove subclassing: public cTeam // cTeam members
 		
 		long GetEvalSingleSample( struct rohanContext& rSes, long lSampleIdxReq, char chMethod) /*! calculates NN outputs for a given sample with GPU method */;
 		long LetBackpropSingleSample( rohanContext& rSes, long lSampleIdxReq, int o, char chMethod) /*! procedure for training weights with MAX criterion */;
-		long LetTrainNNThresh( rohanContext& rSes, long lSampleQtyReq, int o, char chMethod, double dTargetRMSE, int iEpochLength);
+		long LetTrainNNThresh( rohanContext& rSes, long lSampleQtyReq, int o, char chMethod, double dTargetRMSE, int iEpochLength, char cMode);
 		char GetHitched();
 		char GetTaut();
-		int CUDAverify(struct rohanContext& rSes);
+		double CUDAverify(struct rohanContext& rSes);
 			void cDeviceTeam::CUDAShowProperties(struct rohanContext& rSes, int device, FILE* fShow);
 };
 

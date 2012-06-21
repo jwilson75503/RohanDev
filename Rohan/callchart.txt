@@ -7,20 +7,15 @@ int _tmain(int argc, _TCHAR* argv[])
 	struct rohanLearningSet rLearn;
 	cDeviceTeam cdtHorse(rSes); // the horse handles GPU computation kernels and their currency
 	cBarge cbBarge(rSes); // 
-	cDrover cdDrover(rSes);
+	cDrover cdDrover(rSes, rLearn, rNet, cbBarge, cdtHorse);
 	// proceed with operations
-	if(cdDrover.DoAnteLoop(argc, argv, &cdDrover, &cbBarge, &cdtHorse)){
-			cDrover::SetDroverBargeAndTeam( cdDrover, cbBarge, cdtTeam);
-				Barge->SetDrover(cdDrover);
-				Barge->SetTeam(Team);
-				Team->SetDrover(cdDrover);
-				Team->SetBarge(Barge);
-			Team->CUDAverify(struct rohanContext& rSes)
+	if(cdDrover.DoAnteLoop(argc, argv)){
+			SetProgOptions( *rSes, argc, argv);
 			cDrover::ObtainGlobalSettings(struct rohanContext& rSes)
-
+				DirectoryEnsure(rSes.sRohanVerPath)
+				Team->CUDAverify(rSes)
 			// go to general diagnostic
 			cDrover::ShowDiagnostics(struct rohanContext& rSes)
-			
 				// prepartion for automated regression testing begins here
 				cDrover::AskSampleSetName(struct rohanContext& rSes)
 				cBarge::ObtainSampleSet(struct rohanContext& rSes)
@@ -67,18 +62,28 @@ int _tmain(int argc, _TCHAR* argv[])
 						cuEvalSingleSampleBeta(rSes, s, *rSes.rNet, 0, rSes.rNet->Signals, rSes.rNet->Zs, rSes.rNet->Wt, rSes.rLearn->cdcXInputs, rSes.rLearn->cdcYEval, rSes.rLearn->dYEval); // fixed-length method working 2/14/12
 					rNet.dHostRMSE = RmseNN(rSes, 0);
 					long OutputValidate(rohanContext& rSes)
-				ClassifyTest(rSes, rNet, 2 );
+				ClassifyTest(rSes, rNet, 8, 0 );
 					LetTaut(rS);
 					lDeviceTrainable += Team->LetTrainNNThresh(rSes, rSes.rLearn->lSampleQty, 1, 'E', rSes.dTargetRMSE, rSes.iEpochLength);
 					lReturn=knlBackProp( rSes, lFinalSample, o, chMethod); // do training
 						mtkBackPropEoptML<<< rSes.iBpropBlocks , rSes.iBpropThreads >>>( lSampleQtyReq, o);
 					LetSlack(rS);
 					int iHostTrainable = TrainNNThresh(rSes, false);
-				BackPropTest(rSes, rNet, 1, 32);
-					knlRMSEopt(rSes, 0, 1, 'M', 1, iThreads);
-				BackPropTest(rSes, rNet, 1, 64);
-					knlRMSEopt(rSes, 0, 1, 'M', 1, iThreads));
+				BackPropTest(rSes, rNet, 2, 512, 0);
+					RmseNN(rSes, iSampleQty); // update hostRMSE
+					Team->LetTaut(rSes);
+					Team->GetRmseNN(rSes, iSampleQty);// evaluation is now included in classification tests
+					Team->LetSlack(rSes);
+					Team->LetTaut(rSes);
+					iMargin+=iDeviceTrainable=Team->LetTrainNNThresh( rSes, iSampleQty, 1, 'R', rSes.dTargetRMSE, 1, 'D'); // backprop all samples, output #1, revise wts, target RMSE, epoch=single iteration YY change E to R
+					dDifferent += Team->GetRmseNN(rSes, iSampleQty);
+					cuEvalNNLearnSet(rSes, iSampleQty); // evaluation is now included separately in host classification tests
+					iMargin -= iHostTrainable=TrainNNThresh( rSes, true, iSampleQty); // YY change false to true
+					cuEvalNNLearnSet( rSes, iSampleQty); // re-revaluate learnset
+					dDifferent -= RmseNN( rSes, iSampleQty); // update RMSE
+					Team->LetSlack(rSes);
 			Barge->ShowDiagnostics();
+			){
 		cdDrover.DoMainLoop(rSes);
 	}
 	cdDrover.DoPostLoop(rSes);

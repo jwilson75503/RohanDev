@@ -1,7 +1,7 @@
 /* Includes, cuda */
 #include "stdafx.h"
 
-extern int gDebugLvl, iWarnings, iErrors, gTrace;
+extern int gDebugLvl, gTrace;
 extern long bCUDAavailable;
 
 
@@ -478,7 +478,7 @@ long cBarge::LetWriteWeights(struct rohanContext& rSes)
 	long lReturn;
 	// dump weights for verification
 	FILE *fileOutput; // File handle for output
-	lReturn=AsciiFileHandleWrite("weightdump.txt", &fileOutput);
+	lReturn=AsciiFileHandleWrite(rSes.sRohanVerPath, "weightdump.txt", &fileOutput);
 	AsciiWeightDump(rSes, fileOutput); 
 	return lReturn;
 }
@@ -491,7 +491,7 @@ long cBarge::LetWriteEvals(struct rohanContext& rSes, struct rohanLearningSet& r
 
 	strncpy(sFileAscii,rSes.sSesName,246); // do not exceed 254 char file name
 	strcat(sFileAscii,"Evals.txt");
-	lReturn=AsciiFileHandleWrite(sFileAscii, &fileOutput);
+	lReturn=AsciiFileHandleWrite(rSes.sRohanVerPath, sFileAscii, &fileOutput);
 	if(lReturn){
 		for(long s=0; s<rSes.lSampleQtyReq; ++s){
 			if(rSes.iSaveInputs){

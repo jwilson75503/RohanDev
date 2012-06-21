@@ -6,7 +6,7 @@ long BinaryFileHandleWrite(char *sFileName, FILE **fileOutput)
 ;
 int AsciiFileHandleRead(char *sFileName, FILE **fileInput)
 ;
-long AsciiFileHandleWrite(char *sFileName, FILE **fileOutput)
+int AsciiFileHandleWrite(char *sFilePath, char *sFileName, FILE **fileOutput)
 ;
 long AsciiWeightDump(struct rohanContext& rSes, FILE *fileOutput)
 ;

@@ -279,8 +279,8 @@ int TrainNNThresh(struct rohanContext& rSes, long bChangeWeights, int iSampleQty
 
 double RmseNN(struct rohanContext& rSes, long lSampleQtyReq)
 {mIDfunc /*! checks sampled outputs vs evaluated outputs and calculates root mean squared error. */
-	double dReturn=0;
-	FILE *fShow=rSes.debugHandle;
+	double dReturn=0.0;
+	//fprintf(rSes.hostBucket, "s\tD\t-\tY\t=\tArc\t\tErr\t\tSqrErr\t\taccum\n");
 	// check if sample qty is outside the meaningful interval [1, all]
 	if(lSampleQtyReq<=0 || lSampleQtyReq>rSes.rLearn->lSampleQty)
 		lSampleQtyReq=rSes.rLearn->lSampleQty; // default to all if so
@@ -288,11 +288,14 @@ double RmseNN(struct rohanContext& rSes, long lSampleQtyReq)
 		//struct rohanSample& sam = rSes.rLearn->rSample[s]; // loop over all requested samples and documented outputs
 		for(int i=1; i<=rSes.rLearn->iOutputQty; ++i){
 			double dDelta = (double)abs( rSes.rLearn->dDOutputs[IDX2C( i, s, (rSes.rLearn->iOutputQty+1))] - rSes.rLearn->dYEval[IDX2C( i, s, (rSes.rLearn->iOutputQty+1))] ); // delta = Desired - Yielded values
+			//fprintf(rSes.hostBucket, "%d\t%f\t%f\t%f\t", s, rSes.rLearn->dDOutputs[IDX2C( i, s, (rSes.rLearn->iOutputQty+1))], rSes.rLearn->dYEval[IDX2C( i, s, (rSes.rLearn->iOutputQty+1))], dDelta); 
 			if(dDelta>(double)(rSes.rNet->iSectorQty/2)) 
 				dDelta=((double)rSes.rNet->iSectorQty-dDelta); // set delta to the lesser arc length
 			dReturn+=(dDelta*dDelta); // accumulate squared error 
+			//fprintf(rSes.hostBucket, "%f\t%f\t%f\n", dDelta, dDelta*dDelta, dReturn);
 		}
 	}
+	//fprintf(rSes.hostBucket, "RETURN: %f\t%f\n", dReturn, sqrt(dReturn/(double)(lSampleQtyReq*rSes.rLearn->iOutputQty)) );
 	dReturn=sqrt(dReturn/(double)(lSampleQtyReq*rSes.rLearn->iOutputQty)); // take the root of the mean of the accumulated square error
 	
 	return rSes.dHostRMSE=dReturn;

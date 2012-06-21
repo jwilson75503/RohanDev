@@ -9,8 +9,6 @@ int knlBackProp(struct rohanContext& rSes, long lSampleQtyReq, long o, char Opti
 
 __global__ void mtkBackPropMT( long lSampleQtyReq, long o, char Option);
 
-__device__ void subkBackPropRoptMTBeta(long lSampleQtyReq, long o);
-
 __device__ void subkBackPropRoptMT(long lSampleQtyReq, long o);
 
 __device__ void subkBackPropMT(long lSample, long o);
@@ -31,8 +29,6 @@ __device__ void subkRmseMT(long lSampleQtyReq, long o, int OUTROWLEN, double * d
 __device__ void subkRmseMTBeta(long lSampleQtyReq, long o, int OUTROWLEN, double * dSqrErr);
 
 __device__ void subkEvalSampleBetaMT(rohanContext& Ses, long s, rohanNetwork& Net, int o, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval, double * dSqrErr);
-
-__device__ void subkEvalSampleMTGamma(rohanContext& Ses, long s, rohanNetwork& Net, int o, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval, double * dSqrErr);
 
 __device__ void subkEvalSampleSingleThread(long s, char Option, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval, double * dSqrErr);
 

@@ -11,3 +11,15 @@
 #define _WIN32_WINNT 0x0600     // Change this to the appropriate value to target other versions of Windows.
 #endif
 
+// http://stackoverflow.com/questions/7752404/shgetfolderpath-identifier-not-found
+//#define WINVER 0x0601     // Kernel 6.1 == Windows 7/Server 2008 R2
+//#define _WIN32_WINNT WINVER
+//#define _WIN32_IE 0x0800  // 
+
+//#define WINVER 0x0501
+//#define _WIN32_WINNT WINVER
+//#define _WIN32_IE 0x0600
+//
+
+
+#define NOMINMAX          // Don't define min and max (prefer C++ lib)

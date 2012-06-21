@@ -31,7 +31,7 @@
 /* Project includes */
 #include "cBarge.h"
 #include "cDrover.h"
-#include "Complex-math-func.h"
+#include "Complex-math.h"
 #include "crc.h"
 #include "cTeam.h"
 #include "Rohan.h"
@@ -39,7 +39,6 @@
 #include "Rohan-io.h"
 #include "Rohan-kernel.h"
 #include "Rohan-learn.h"
-#include "ShowMe.h"
 
 //usings
 using namespace std;
@@ -49,4 +48,10 @@ using std::cout;
 //defines
 #define TWO_PI 6.283185307179586476925286766558
 #define IDX2C( i, j, ld) ((i)+(( j )*( ld )))
+
+//global declares
+extern int gDebugLvl, gDevDebug, gTrace;
+extern long bCUDAavailable;
+extern float gElapsedTime, gKernelTimeTally;
+
 
