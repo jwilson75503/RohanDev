@@ -9,82 +9,61 @@ int _tmain(int argc, _TCHAR* argv[])
 	cBarge cbBarge(rSes); // 
 	cDrover cdDrover(rSes, rLearn, rNet, cbBarge, cdtHorse);
 	// proceed with operations
-	if(cdDrover.DoAnteLoop(argc, argv)){
-			SetProgOptions( *rSes, argc, argv);
-			cDrover::ObtainGlobalSettings(struct rohanContext& rSes)
+	if(cdDrover.DoAnteLoop(rSes, argc, argv)){
+			Barge->SetProgOptions( rSes, argc, argv )
+			Barge->ObtainGlobalSettings(rSes);
+				Team->CUDAverify(rSes)>=2.0
 				DirectoryEnsure(rSes.sRohanVerPath)
-				Team->CUDAverify(rSes)
-			// go to general diagnostic
-			cDrover::ShowDiagnostics(struct rohanContext& rSes)
-				// prepartion for automated regression testing begins here
-				cDrover::AskSampleSetName(struct rohanContext& rSes)
-				cBarge::ObtainSampleSet(struct rohanContext& rSes)
-					int AsciiFileHandleRead(char *sFileName, FILE **fileInput)
-					cBarge::DoLoadSampleSet(struct rohanContext& rSes, FILE *fileInput)
-						int cuMakeArchValues(char *sMLMVNarch, struct rohanContext& rSes)
-					cBarge::CurateSectorValue(struct rohanContext& rSes)
-					cBarge::CompleteHostLearningSet(struct rohanContext& rSes)
-						cuDoubleComplex ConvScalarCx(struct rohanContext& rSes, double Scalar)
-				Barge->DoPrepareNetwork(*rSes);
-					int cuMakeNNStructures(struct rohanContext &rSes)
-					int BinaryFileHandleRead(char* sFileName, FILE** fileInput)
-					long cuNNLoadWeights(struct rohanContext &rSes, FILE *fileInput)
-					long cuRandomizeWeights(struct rohanContext &rSes)
-						int cuResetAllDeltasAndOutputs(rohanContext& rSes)
-					int cuSectorTableMake(struct rohanContext &rSes)
-				cDeviceTeam::LetHitch(struct rohanContext& rSes)
-					cDeviceTeam::TransferContext(struct rohanContext& rSes, char Direction
-					cDeviceTeam::CopyNet(struct rohanContext& rSes, char Direction)
-					cDeviceTeam::CopyLearnSet(struct rohanContext& rSes, char Direction)				
-				// engagement complete
-				
-				// copy information back from DEVICE to HOST
-				cDeviceTeam::LetSlack(struct rohanContext& rSes);
-					TransferContext(rSes, 'H');
-					TransferLayers(rSes, 'H');
-					TransferNet(rSes, 'H');
-					TransferOutputs(rSes, 'H');
-				// end copy from DEVICE to HOST
-
-				RmseEvaluateTest(rSes, rNet, 2 );
-					Team->LetTaut(rSes);
-						TransferContext(rSes, 'D');
-						TransferLayers(rSes, 'D');
-						TransferNet(rSes, 'D');
-						TransferOutputs(rSes, 'D');
-					Team->GetRmseNN(rSes, 0));
-						knlRMSEopt( rSes, 0, 1, 'R');
-							mtkRMSEoptMT<<< rSes.iEvalBlocks , rSes.iEvalThreads >>>( lSampleQtyReq, o, Option);
-								subkEvalSampleSingleThread(sindex, 'R', Signals, Zs, devNet.Wt);
-								subkRmseMT(	lSampleQtyReq, o);
-					Team->LetSlack(rSes);
-					cuEvalNNLearnSet(rSes);
-						cuEvalSingleSampleBeta(rSes, s, *rSes.rNet, 0, rSes.rNet->Signals, rSes.rNet->Zs, rSes.rNet->Wt, rSes.rLearn->cdcXInputs, rSes.rLearn->cdcYEval, rSes.rLearn->dYEval); // fixed-length method working 2/14/12
-					rNet.dHostRMSE = RmseNN(rSes, 0);
-					long OutputValidate(rohanContext& rSes)
-				ClassifyTest(rSes, rNet, 8, 0 );
-					LetTaut(rS);
-					lDeviceTrainable += Team->LetTrainNNThresh(rSes, rSes.rLearn->lSampleQty, 1, 'E', rSes.dTargetRMSE, rSes.iEpochLength);
-					lReturn=knlBackProp( rSes, lFinalSample, o, chMethod); // do training
-						mtkBackPropEoptML<<< rSes.iBpropBlocks , rSes.iBpropThreads >>>( lSampleQtyReq, o);
-					LetSlack(rS);
-					int iHostTrainable = TrainNNThresh(rSes, false);
-				BackPropTest(rSes, rNet, 2, 512, 0);
-					RmseNN(rSes, iSampleQty); // update hostRMSE
-					Team->LetTaut(rSes);
-					Team->GetRmseNN(rSes, iSampleQty);// evaluation is now included in classification tests
-					Team->LetSlack(rSes);
-					Team->LetTaut(rSes);
-					iMargin+=iDeviceTrainable=Team->LetTrainNNThresh( rSes, iSampleQty, 1, 'R', rSes.dTargetRMSE, 1, 'D'); // backprop all samples, output #1, revise wts, target RMSE, epoch=single iteration YY change E to R
-					dDifferent += Team->GetRmseNN(rSes, iSampleQty);
-					cuEvalNNLearnSet(rSes, iSampleQty); // evaluation is now included separately in host classification tests
-					iMargin -= iHostTrainable=TrainNNThresh( rSes, true, iSampleQty); // YY change false to true
-					cuEvalNNLearnSet( rSes, iSampleQty); // re-revaluate learnset
-					dDifferent -= RmseNN( rSes, iSampleQty); // update RMSE
-					Team->LetSlack(rSes);
-			Barge->ShowDiagnostics();
+				AsciiFileHandleWrite(rSes.sRohanVerPath, "DevBucket.txt", &(rSes.deviceBucket));
+				AsciiFileHandleWrite(rSes.sRohanVerPath, "HostBucket.txt", &(rSes.hostBucket));
+			Barge->ObtainSampleSet(rSes);
+				AsciiFileHandleRead(rSes.sLearnSet, &fileInput);.
+				DoLoadSampleSet(rSes, fileInput);
+					cuMakeArchValues(cLines[iArchLineIdx], rSes);.
+				CurateSectorValue(rSes)).
+				CompleteHostLearningSet(rSes);.
+			Barge->DoPrepareNetwork(rSes);
+				cuMakeNNStructures(rSes);.
+				BinaryFileHandleRead(rSes.sWeightSet, &rSes.rNet->fileInput);.
+				cuNNLoadWeights(rSes, rSes.rNet->fileInput);.
+				cuRandomizeWeightsBlock(rSes);.
+				cuSectorTableMake(rSes);.
+			cDrover::ShowDiagnostics(struct rohanContext& rSes, struct rohanNetwork& rNet)
+				Team->LetHitch(rSes);
+				Team->LetSlack(rSes);
+				Team->RmseEvaluateTest(rSes, rNet, 2 , 0);
+				Team->ClassifyTest(rSes, rNet, 2, 0 );
+				Team->BackPropTest(rSes, rNet, 2, 128, 0);
+			Barge->ShowDiagnostics();.
 			){
 		cdDrover.DoMainLoop(rSes);
-	}
-	cdDrover.DoPostLoop(rSes);
+			DisplayMenu(0, rSes);
+			BeginSession(rSes); // new or resume session
+			GetNNTop(rSes);
+			ReGetSampleSet(rSes); XX
+			GetWeightSet(rSes);
+			LetInteractiveEvaluation(rSes);
+			LetInteractiveLearning(rSes);
+				Team->LetTaut(rSes);
+				Team->LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, rSes.iEpochLength, 'D');
+					LetTaut(rSes);
+					knlFFeRmseOpt( rSes, o, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE
+					knlBackProp( rSes, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads); // do training
+					LetSlack(rSes);
+				Team->LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, rSes.iEpochLength, 'H');
+				
+			cuPreSaveNNWeights(rSes);
+			cuRandomizeWeightsBlock(rSes); 
+			Team->LetEvalSet(rSes, 'H'); // this is performed on the host
+			RmseNN(rSes, 0);
+			LetUtilities(rSes);
+			Barge->OptionToDoubleVector("learn", v);
+			Team->LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, rSes.iEpochLength, 'D');
+			cuPreSaveNNWeights(rSes, 'D');
+			Barge->OptionToIntVector("eval", v);
+			Team->GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'D');
+			Barge->LetWriteEvals(rSes, *rSes.rLearn);
+			Barge->RLog(rSes, sLog);
+			Barge->HanReport(rSes, sLog);
+		cdDrover.DoPostLoop(rSes);
 }

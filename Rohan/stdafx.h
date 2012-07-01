@@ -1,3 +1,5 @@
+#ifndef STDAFX_H
+#define STDAFX_H
 // stdafx.h : include file for standard system include files,
 // or project specific include files that are used frequently, but
 // are changed infrequently
@@ -9,6 +11,11 @@
 /* standard libraries */
 #include <conio.h> //for _getch 
 #include <iostream>
+#include <string>
+#include <cctype>
+#include <algorithm>
+#include <vector>
+#include <iterator>
 #include <float.h>
 #include <math.h>  //for M_PI
 #include <stdio.h>
@@ -29,7 +36,6 @@
 #include <shrQATest.h>
 
 /* Project includes */
-#include "cBarge.h"
 #include "cDrover.h"
 #include "Complex-math.h"
 #include "crc.h"
@@ -39,19 +45,27 @@
 #include "Rohan-io.h"
 #include "Rohan-kernel.h"
 #include "Rohan-learn.h"
+#ifndef CUDACONLY
+#include "cBarge.h"
+#endif
 
-//usings
+// Boost
+#ifndef CUDACONLY
+#include <boost/date_time/posix_time/posix_time.hpp> //include all types plus i/o
+using namespace boost::posix_time;
+#endif
+
+// usings
 using namespace std;
 using std::cin;
 using std::cout;
 
-//defines
+// defines
 #define TWO_PI 6.283185307179586476925286766558
 #define IDX2C( i, j, ld) ((i)+(( j )*( ld )))
 
-//global declares
+// global declares
 extern int gDebugLvl, gDevDebug, gTrace;
-extern long bCUDAavailable;
 extern float gElapsedTime, gKernelTimeTally;
 
-
+#endif

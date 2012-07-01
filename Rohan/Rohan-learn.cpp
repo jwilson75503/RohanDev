@@ -4,18 +4,18 @@
 extern int gDebugLvl, gDevDebug, gTrace;
 
 
-int cuEvalSingleSampleBeta(struct rohanContext& Ses, long s, rohanNetwork& Net, int o, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
+int cuEvalSingleSampleBeta(struct rohanContext& Ses, int s, rohanNetwork& Net, int o, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
 {// Beta uses fixed length fields instead of nested pointer layers
 	// o is currently used to control diagnostic output
 	 /*! layer zero (inputs) is special. */
-	long INROWLEN=Net.iNeuronQTY[0];//rSes.rLearn->iInputQty+1;
+	int INROWLEN=Net.iNeuronQTY[0];//rSes.rLearn->iInputQty+1;
 	for (int i=0; i<INROWLEN; ++i){
 		Signals[Net.iNeuronOfst[0]+i]= XInputs[IDX2C( i, s, INROWLEN )];
 	}
 	 /*! middle and top layers. */
-	for (int L=1; L<Net.iLayerQty; ++L){
+	for (int L=1; L<Net.iLayerQTY; ++L){
 		//struct rohanLayer& lay = Net.rLayer[L];
-		long LAY=L;
+		int LAY=L;
 		int TRIB=L-1; // index of previous layer
 		int iNeuronQTY=Net.iNeuronQTY[LAY];
 		int iSignalQTY=Net.iDendrtQTY[LAY]; // signal qty depends on size of previous layer
@@ -35,8 +35,8 @@ int cuEvalSingleSampleBeta(struct rohanContext& Ses, long s, rohanNetwork& Net, 
 	}
 	 
 	/*! last layer values are converted and stored here */
-	long TOP = Net.iLayerQty-1;
-	long OUTROWLEN=Net.iNeuronQTY[TOP];
+	int TOP = Net.iLayerQTY-1;
+	int OUTROWLEN=Net.iNeuronQTY[TOP];
 	
 	for (int i=0; i<OUTROWLEN; ++i){ // continuous conversion begins here 
 		YEval[IDX2C( i, s, OUTROWLEN )]= Signals[Net.iNeuronOfst[TOP]+i] ; // store final complex output(s)
@@ -49,12 +49,12 @@ int cuEvalSingleSampleBeta(struct rohanContext& Ses, long s, rohanNetwork& Net, 
 }
 
 
-long OutputValidate(rohanContext& rSes)
+int OutputValidate(rohanContext& rSes)
 {mIDfunc  /*! compares outputs by sample and by method to verify bulk outputs.. */
 	int iReturn=0;
-	long ROWLEN = rSes.rLearn->iOutputQty+1;
+	int ROWLEN = rSes.rLearn->iOutputQty+1;
 	
-	for(long s=0; s<rSes.rLearn->lSampleQty; ++s){
+	for(int s=0; s<rSes.rLearn->lSampleQty; ++s){
 		for(int i=0; i<=rSes.rLearn->iOutputQty; ++i){
 			//printf("%d %d %f %f\t", s, i, rSes.rLearn->dYEval[ IDX2C( s, i, ROWLEN ) ] , rSes.rLearn->dAltYEval[ IDX2C( s, i, ROWLEN ) ] );
 			if(rSes.rLearn->iContOutputs){
@@ -73,7 +73,7 @@ long OutputValidate(rohanContext& rSes)
 
 int cuResetAllDeltasAndOutputs(rohanContext& rSes)
 {mIDfunc
-	for (int L=1; L<rSes.rNet->iLayerQty; ++L)  /*! reset outputs and deltas for full neuron layers. */
+	for (int L=1; L<rSes.rNet->iLayerQTY; ++L)  /*! reset outputs and deltas for full neuron layers. */
 		for (int i = 0; i<=rSes.rNet->rLayer[L].iNeuronQty; ++i){
 			rSes.rNet->rLayer[L].Deltas[i]=cdcZero;
 			rSes.rNet->rLayer[L].ZOutputs[i]=cdcZero;
@@ -88,13 +88,13 @@ int cuResetAllDeltasAndOutputs(rohanContext& rSes)
 }
 
 
-int cuBackpropLearnSet(rohanContext& rSes, long lSampleQtyReq, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
+int cuBackpropLearnSet(rohanContext& rSes, int lSampleQtyReq, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
 { mIDfunc /*! propagates adjustment of weights backwards preceeding layers from the chosen network output. */
 	// lSampleQty is sample qty requested
-	long lSubmitted=0;
+	int lSubmitted=0;
 	if(lSampleQtyReq < 1 || lSampleQtyReq > rSes.rLearn->lSampleQty) // if requested qty is out of bounds, use max
 		lSampleQtyReq=rSes.rLearn->lSampleQty;
-	for(long s=0; s<rSes.rLearn->lSampleQty; ++s){ // submit all samples requestee, one at a time
+	for(int s=0; s<rSes.rLearn->lSampleQty; ++s){ // submit all samples requestee, one at a time
 		cuBackpropSingleSample(rSes, s,  Net, Signals, Zs, Wt, Deltas, XInputs, YEval, dYEval );
 		++lSubmitted;
 	}
@@ -103,18 +103,18 @@ int cuBackpropLearnSet(rohanContext& rSes, long lSampleQtyReq, rohanNetwork& Net
 }
 
 
-int cuBackpropSingleSample(rohanContext& rSes, long s, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
+int cuBackpropSingleSample(rohanContext& rSes, int s, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
 { mIDfunc /*! propagates adjustment of weights backwards preceeding layers from the chosen network output. */
 	// s is sample index
 	int iReturn=0 /* returns number of weights adjusted */ ;
-	long ROWLEN = rSes.rLearn->iOutputQty+1;
+	int ROWLEN = rSes.rLearn->iOutputQty+1;
 	/* clear all temp values BP0 */
 	cuResetAllDeltasAndOutputs(rSes);
 	/* re-evaluate sample to load temp values. BPI */
 	cuEvalSingleSampleBeta(rSes, s, Net, (s==2), Signals, Zs, Wt, XInputs, YEval, dYEval);
 	/* begin error calculation. BPII */
 	cuDoubleComplex Deltastar /* measured error at the chosen network output. */ ;
-	long TOP=Net.iLayerQty-1;
+	int TOP=Net.iLayerQTY-1;
 	/* calc top layer deltas. */
 	for(int i=0; i<Net.iNeuronQTY[TOP]; ++i){
 		 /* delta-star = D - Y = Desired output minus actual output from evaluation
@@ -126,10 +126,10 @@ int cuBackpropSingleSample(rohanContext& rSes, long s, rohanNetwork& Net, cuDoub
 		Deltas[Net.iNeuronOfst[TOP]+i] = CxMultiplyRl( Deltastar, Net.dINV_S[TOP] );
 	}
 	/* Now distribute the correction to lower layers if any. BPII.1 */
-	if (Net.iLayerQty>2){  /* remember layer 0 = inputs, layer 1 = bottom row, layer {2..iLayerQty-2} = middle row, layer iLayerQty-1 = top row. */
-		for (int L=Net.iLayerQty-1; L>1; --L){
-			long LAY = L; /* setup access to layers. */
-			long TRIB = L-1; /* trib for tributary.*/
+	if (Net.iLayerQTY>2){  /* remember layer 0 = inputs, layer 1 = bottom row, layer {2..iLayerQTY-2} = middle row, layer iLayerQTY-1 = top row. */
+		for (int L=Net.iLayerQTY-1; L>1; --L){
+			int LAY = L; /* setup access to layers. */
+			int TRIB = L-1; /* trib for tributary.*/
 			int iTributQTY=Net.iNeuronQTY[TRIB];
 			int Sj=Net.iDendrtQTY[TRIB]; if (TRIB==1) Sj=1; // Sj=1 for firest hidden layer
 			for (int i=1; i<Net.iNeuronQTY[LAY]; ++i) { // skip 0th neuron as its weights are either 1 (div identity) or 0 (div forbidden) and don't change anyway
@@ -177,14 +177,14 @@ int cuBackpropSingleSample(rohanContext& rSes, long s, rohanNetwork& Net, cuDoub
 	}
 	/* re-evaluate sample to update temp values. */
 	cuEvalSingleSampleBeta(rSes, s, Net, false, Signals, Zs, Wt, XInputs, YEval, dYEval);
-	if (Net.iLayerQty>2){
+	if (Net.iLayerQTY>2){
 		 /* now use those outputs' conjugates and the deltas to adjust middle layers. BP III.1 */
-		for (int L=2; L<Net.iLayerQty-1; ++L){
+		for (int L=2; L<Net.iLayerQTY-1; ++L){
 			 /* setup access to layers. */
 			//struct rohanLayer& lay = Net.rLayer[L]; 
-			long LAY = L;
+			int LAY = L;
 			//struct rohanLayer& trib = Net.rLayer[L-1] /* trib for tributary. */ ; 
-			long TRIB = L-1;
+			int TRIB = L-1;
 			int iLayWidth=Net.iNeuronQTY[LAY];
 			int iTribWidth=Net.iNeuronQTY[TRIB];
 			for (int k=1; k<Net.iNeuronQTY[LAY]; ++k){
@@ -210,7 +210,7 @@ int cuBackpropSingleSample(rohanContext& rSes, long s, rohanNetwork& Net, cuDoub
 		}
 	}
 	/* correct output layer BP III.3 */
-	long SUB = TOP-1; 
+	int SUB = TOP-1; 
 	int iTopWidth=Net.iNeuronQTY[TOP];
 	int iSubWidth=Net.iNeuronQTY[SUB];
 			
@@ -233,70 +233,68 @@ int cuBackpropSingleSample(rohanContext& rSes, long s, rohanNetwork& Net, cuDoub
 }
 
 
-int TrainNNThresh(struct rohanContext& rSes, long bChangeWeights, int iSampleQty)
+int TrainNNThresh(struct rohanContext& rSes, int bChangeWeights)
 {mIDfunc 
 /*! checks sampled outputs vs evaluated outputs, and returns number of samples that exceed threshold
  *  excessive samples are submitted for backpropagation if bChangeWeights is true.
  */
 	int iReturn=0;
 	double dDelta=0;
-	long ROWLEN = rSes.rLearn->iOutputQty+1 ;
-	if(iSampleQty<0 || iSampleQty>rSes.rLearn->lSampleQty){
-		if (rSes.lSampleQtyReq<=0 || rSes.lSampleQtyReq>rSes.rLearn->lSampleQty)
-			rSes.lSampleQtyReq=rSes.rLearn->lSampleQty;
-		iSampleQty=rSes.lSampleQtyReq;
-	}
+	int ROWLEN = rSes.rLearn->iOutputQty+1 ;
 	//adjust requested amount to available values
-	for(long s=0; s<iSampleQty; ++s){  // loop over samples.
+	for(int s=0; s<rSes.lSampleQtyReq; ++s){  // loop over samples.
 		int iOverMAX=0;
 		for(int i=0; i<=rSes.rLearn->iOutputQty; ++i){  // loop over outputs.
 			dDelta = (double) abs( rSes.rLearn->dDOutputs[ IDX2C( i, s, ROWLEN ) ] - rSes.rLearn->dYEval[ IDX2C( i, s, ROWLEN ) ] );
-			 // printf("dDelta %f dDelta*2 %f, Sectors %d\n", dDelta, dDelta*2, Net.iSectorQty);
 			if((dDelta*2)>rSes.rNet->iSectorQty)
 				dDelta=rSes.rNet->iSectorQty-dDelta;
-			 // printf("Sample %d, output %f eval %f delta %f\n", s, sam.dXInputs[rSes.rLearn->iInputQty+i], sam.dYEval[i], dDelta);
 			if( dDelta > rSes.dMAX)  // if effective error exceeds MAX, make a note
 				++iOverMAX;
-			//if(gDevDebug){
-			//	if(i==1)
-			//		printf("[s%d %f > %f] %d \n", s, dDelta, rSes.dMAX, dDelta > rSes.dMAX);
-			//}
 		}
 		if (iOverMAX!=0) {	 // if a note has been made. 
 			++iReturn; // increment the number of excessive samples.
 			if (bChangeWeights) {  // and correct weights if that is desired.
 				cuBackpropSingleSample(rSes, s, *rSes.rNet, rSes.rNet->Signals, rSes.rNet->Zs, rSes.rNet->Wt, rSes.rNet->Deltas, rSes.rLearn->cdcXInputs, rSes.rLearn->cdcYEval, rSes.rLearn->dYEval);
 			}
+			//cuDoubleComplex W = rSes.rNet->Wt[IDX2C( rSes.rNet->iWeightOfst[2]+1, 1, rSes.rNet->iDendrtQTY[2] )];
+			//fprintf(rSes.hostBucket, "\t%d\t%f\t%f\n", s, W.x, W.y);
 		}
 	}
 	if(gDevDebug){
 		cuDoubleComplex W = rSes.rNet->Wt[IDX2C( rSes.rNet->iWeightOfst[1]+1, 1, rSes.rNet->iDendrtQTY[1] )];
 		printf("[%f + %fi]\n", W.x, W.y );
 	}
+	//fprintf(rSes.hostBucket, "RETURN: %d\n", iReturn);
+	//printf("<<<\n");
 	return (iReturn);
 }
 
 
-double RmseNN(struct rohanContext& rSes, long lSampleQtyReq)
+double RmseNN(struct rohanContext& rSes, int o)
 {mIDfunc /*! checks sampled outputs vs evaluated outputs and calculates root mean squared error. */
-	double dReturn=0.0;
-	//fprintf(rSes.hostBucket, "s\tD\t-\tY\t=\tArc\t\tErr\t\tSqrErr\t\taccum\n");
-	// check if sample qty is outside the meaningful interval [1, all]
-	if(lSampleQtyReq<=0 || lSampleQtyReq>rSes.rLearn->lSampleQty)
-		lSampleQtyReq=rSes.rLearn->lSampleQty; // default to all if so
-	for(long s=0; s<lSampleQtyReq; ++s){
-		//struct rohanSample& sam = rSes.rLearn->rSample[s]; // loop over all requested samples and documented outputs
-		for(int i=1; i<=rSes.rLearn->iOutputQty; ++i){
-			double dDelta = (double)abs( rSes.rLearn->dDOutputs[IDX2C( i, s, (rSes.rLearn->iOutputQty+1))] - rSes.rLearn->dYEval[IDX2C( i, s, (rSes.rLearn->iOutputQty+1))] ); // delta = Desired - Yielded values
-			//fprintf(rSes.hostBucket, "%d\t%f\t%f\t%f\t", s, rSes.rLearn->dDOutputs[IDX2C( i, s, (rSes.rLearn->iOutputQty+1))], rSes.rLearn->dYEval[IDX2C( i, s, (rSes.rLearn->iOutputQty+1))], dDelta); 
-			if(dDelta>(double)(rSes.rNet->iSectorQty/2)) 
-				dDelta=((double)rSes.rNet->iSectorQty-dDelta); // set delta to the lesser arc length
-			dReturn+=(dDelta*dDelta); // accumulate squared error 
-			//fprintf(rSes.hostBucket, "%f\t%f\t%f\n", dDelta, dDelta*dDelta, dReturn);
+	// Y evaluated outputs must be made ready before calling this function.
+	// o controls which output is used for evaluation (0=all)
+	double AccumSquareError=0.0;
+	double dReturn;
+
+	for(int s=0; s<rSes.lSampleQtyReq; ++s){  // loop over all requested samples and documented outputs
+		if(o){
+				double Delta = abs( rSes.rLearn->dDOutputs[IDX2C( o, s, (rSes.rLearn->iOutputQty+1))] - rSes.rLearn->dYEval[IDX2C( o, s, (rSes.rLearn->iOutputQty+1))] ); // delta = Desired - Yielded values
+				if (Delta > rSes.rNet->kdiv2 ) 
+					Delta = rSes.rNet->iSectorQty - Delta; // set delta to the lesser arc length
+				AccumSquareError+=(Delta*Delta); // accumulate squared error 
+		}
+		else {
+			for(int i=1; i<=rSes.rLearn->iOutputQty; ++i){
+				double Delta = abs( rSes.rLearn->dDOutputs[IDX2C( i, s, (rSes.rLearn->iOutputQty+1))] - rSes.rLearn->dYEval[IDX2C( i, s, (rSes.rLearn->iOutputQty+1))] ); // delta = Desired - Yielded values
+				if (Delta > rSes.rNet->kdiv2 ) 
+					Delta = rSes.rNet->iSectorQty - Delta; // set delta to the lesser arc length
+				AccumSquareError+=(Delta*Delta); // accumulate squared error 
+			}
 		}
 	}
-	//fprintf(rSes.hostBucket, "RETURN: %f\t%f\n", dReturn, sqrt(dReturn/(double)(lSampleQtyReq*rSes.rLearn->iOutputQty)) );
-	dReturn=sqrt(dReturn/(double)(lSampleQtyReq*rSes.rLearn->iOutputQty)); // take the root of the mean of the accumulated square error
+	// take the root of the mean of the accumulated square error
+	dReturn=sqrt( (AccumSquareError/(rSes.lSampleQtyReq * rSes.rLearn->iOutputQty)) ); 
 	
-	return rSes.dHostRMSE=dReturn;
+	return rSes.dRMSE=rSes.dHostRMSE=dReturn;
 }

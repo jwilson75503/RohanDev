@@ -2,7 +2,7 @@
 #include "stdafx.h"
 
 extern int gDebugLvl, gTrace;
-extern long bCUDAavailable;
+extern int bCUDAavailable;
 
 
 int cuMessage(cublasStatus csStatus, char *sName, char *sCodeFile, int iLine, char *sFunc)
@@ -43,7 +43,7 @@ int BinaryFileHandleRead(char* sFileName, FILE** fileInput)
 	else return 1;
 }
 
-long BinaryFileHandleWrite(char *sFileName, FILE **fileOutput)
+int BinaryFileHandleWrite(char *sFileName, FILE **fileOutput)
 {mIDfunc/// Opens a file for writing in binary mode, typically top record results of a learning sewssion and/or to save human-readable weight values.
 	*fileOutput = fopen(sFileName, "wb");  /* Open in BINARY mode */
 	if (*fileOutput == NULL) {
@@ -89,22 +89,22 @@ int cuMakeLayers(int iInputQty, char *sLayerSizes, struct rohanContext& rSes)
 /// Parses a string to assign network architecture parameters for use by later functions. 
 /// Returns neurons in last layer if successful, otherwise 0
 	char *sArchDup, *sDummy;
-	int iLayerQty=1;
+	int iLayerQTY=1;
 
 	sArchDup = _strdup(sLayerSizes); // strtok chops up the input string, so we must make a copy (or do we? - 6/15/10) (yes we do 8/22/10)
 	sDummy = strtok (sArchDup, " ,\t");
 	while (sDummy!=NULL) {// this loop counts the values present in a copy of sLayerSizes, representing neurons in each layer until a not-legal layer value is reached
 		sDummy = strtok (NULL, " ,\t");
-		++iLayerQty; //count layers
+		++iLayerQTY; //count layers
 	}
-	rSes.rNet->rLayer=(struct rohanLayer*)malloc(iLayerQty * sizeof (struct rohanLayer)); //point to array of layers
+	rSes.rNet->rLayer=(struct rohanLayer*)malloc(iLayerQTY * sizeof (struct rohanLayer)); //point to array of layers
 		mCheckMallocWorked(rSes.rNet->rLayer)
 		rSes.lMemStructAlloc = rSes.lMemStructAlloc || RNETlayers;
-	printf("%d layers plus input layer allocated.\n", (iLayerQty-1));
+	printf("%d layers plus input layer allocated.\n", (iLayerQTY-1));
 	
 	sArchDup=_strdup(sLayerSizes); // second pass
 	sDummy = strtok(sArchDup, " ,\t");
-	for (int i=0;i<iLayerQty;++i) {// this loop stores neurons in each layer
+	for (int i=0;i<iLayerQTY;++i) {// this loop stores neurons in each layer
 		if (i) {
 			rSes.rNet->rLayer[i].iNeuronQty = atoi(sDummy);
 			rSes.rNet->rLayer[i].iDendriteQty=rSes.rNet->rLayer[i-1].iNeuronQty; //previous layer's neuron qty is dendrite qty
@@ -118,76 +118,104 @@ int cuMakeLayers(int iInputQty, char *sLayerSizes, struct rohanContext& rSes)
 	}
 	if (cuMakeNNStructures(rSes)) 
 		printf("Nodes allocated.");
-	return rSes.rNet->rLayer[rSes.rNet->iLayerQty-1].iNeuronQty;
+	return rSes.rNet->rLayer[rSes.rNet->iLayerQTY-1].iNeuronQty;
 }
 
 
 
 int cuMakeArchValues(char *sMLMVNarch, struct rohanContext& rSes)
-{mIDfunc/// Parses a string to assign network architecture parameters for use by later functions. 
+{mIDfunc/// [No longer parses] a string to assign network architecture parameters for use by later functions. [now uses program_options 6/27/12]
 /// Returns neurons in last layer if successful, otherwise 0
-	char *sArchDup, *sDummy;
-	sArchDup = _strdup(sMLMVNarch); // strtok chops up the input string, so we must make a copy (or do we? - 6/15/10) (yes we do 8/22/10)
-	sDummy = strtok(sArchDup, " ,\t"); // first value is always # of samples, to be skipped
-	sDummy = strtok(NULL, " ,\t"); // second value is always # of sectors
-	rSes.rNet->iSectorQty = atoi(sDummy); 
-	rSes.rNet->kdiv2= atoi(sDummy)/2;
-	rSes.rNet->dK_DIV_TWO_PI = rSes.rNet->iSectorQty / TWO_PI; // calc this now to prevents redundant conversion operations
-	rSes.rNet->iLayerQty = 0;
-	sDummy = strtok (NULL, " ,\t");
-	while (atoi(sDummy)) {// this loop counts the values present in a copy of cMLMVNarch, representing neurons in each layer until a not-legal layer value is reached
-		sDummy = strtok (NULL, " ,\t");
-		++rSes.rNet->iLayerQty; //count layers
-	}
+	//char *sArchDup, *sDummy;
+	//sArchDup = _strdup(sMLMVNarch); // strtok chops up the input string, so we must make a copy (or do we? - 6/15/10) (yes we do 8/22/10)
+	//sDummy = strtok(sArchDup, " ,\t"); // first value is always # of samples, to be skipped
+	//sDummy = strtok(NULL, " ,\t"); // second value is always # of sectors
+	rSes.rNet->iSectorQty = rSes.iSectorQty; //atoi(sDummy); 
+	rSes.rNet->kdiv2 = rSes.iSectorQty / 2; //atoi(sDummy)/2;
+	rSes.rNet->dK_DIV_TWO_PI = rSes.iSectorQty / TWO_PI; //rSes.rNet->iSectorQty / TWO_PI; // calc this now to prevents redundant conversion operations
+	rSes.rNet->iLayerQTY = rSes.iLayerQty + 1; // 0;
+	//sDummy = strtok (NULL, " ,\t");
+	//while (atoi(sDummy)) {// this loop counts the values present in a copy of cMLMVNarch, representing neurons in each layer until a not-legal layer value is reached
+	//	sDummy = strtok (NULL, " ,\t");
+	//	++rSes.rNet->iLayerQTY; //count layers
+	//}
 	
-	rSes.rNet->rLayer=(struct rohanLayer*)malloc(rSes.rNet->iLayerQty * sizeof (struct rohanLayer)); //point to array of layers
+	rSes.rNet->rLayer=(struct rohanLayer*)malloc(rSes.rNet->iLayerQTY * sizeof (struct rohanLayer)); //point to array of layers
 		mCheckMallocWorked(rSes.rNet->rLayer)
 	
-	if (sDummy!=NULL) {// check that there is another parameter, not just the end of the string
-		rSes.rNet->sWeightSet=_strdup(sDummy);
-		printf("Using weights in %s\n", rSes.rNet->sWeightSet);}
-	else{
-		printf("No weight set filename specificed, get from config file or cli args.\n");
-		rSes.rNet->sWeightSet="NOTFOUND";
-	}
-	sDummy = strtok (NULL, " ,\t");
-	if (sDummy!=NULL) {// check that there is another parameter, not just the end of the string
-		rSes.rNet->bContActivation=atoi(sDummy);
-		if(rSes.rNet->bContActivation)
+	//if (sDummy!=NULL) {// check that there is another parameter, not just the end of the string
+	//	strcpy(rSes.sWeightSet, _strdup(sDummy));
+		printf("Using weights in %s\n", rSes.sWeightSet);
+	//}
+	//else{
+	//	printf("No weight set filename specificed, get from config file or cli args.\n");
+	//	strcpy(rSes.sWeightSet, "NOTFOUND");
+	//}
+	//sDummy = strtok (NULL, " ,\t");
+	//if (sDummy!=NULL) {// check that there is another parameter, not just the end of the string
+	//	rSes.rNet->iContActivation=atoi(sDummy);
+		if(rSes.rNet->iContActivation)
 			printf("Continuous activation mode specified\n"); 
 		else
 			printf("Discrete activation mode specified\n"); 
-	}
-	else{
-		printf("No Activation mode specificed, get from config file or cli args.\n");
-	}
+	//}
+	//else{
+	//	printf("No Activation mode specificed, get from config file or cli args.\n");
+	//}
 	
-	sArchDup=_strdup(sMLMVNarch); // second pass
-	sDummy = strtok(sArchDup, " ,\t"); // skip sample qty
-	sDummy = strtok(NULL, " ,\t"); // skip sector qty
-	int l=0;
-	sDummy = strtok (NULL, " ,\t");
-	while (atoi(sDummy)) {// this loop stores neurons in each layer, until it encounters an invalid neuron qty
-		rSes.rNet->rLayer[l].iNeuronQty = atoi(sDummy);
-		if (l) rSes.rNet->rLayer[l].iDendriteQty=rSes.rNet->rLayer[l-1].iNeuronQty; //previous layer's neuron qty is dendrite qty
-		else rSes.rNet->rLayer[0].iDendriteQty=0; // layer zero has no dendrites
-		sDummy = strtok (NULL, " ,\t");
-		++l; //count layers
-	}
-	mDebug(1,0) for (int i=0; i<rSes.rNet->iLayerQty; ++i) printf("%s line %d: layer %d neurons %d dendrites %d\n", __FILE__, __LINE__, i, rSes.rNet->rLayer[i].iNeuronQty, rSes.rNet->rLayer[i].iDendriteQty);
+	//sArchDup=_strdup(sMLMVNarch); // second pass
+	//sDummy = strtok(sArchDup, " ,\t"); // skip sample qty
+	//sDummy = strtok(NULL, " ,\t"); // skip sector qty
+	//int L=0;
+	//sDummy = strtok (NULL, " ,\t");
+	//while (atoi(sDummy)) {// this loop stores neurons in each layer, until it encounters an invalid neuron qty
+		//rSes.rNet->rLayer[L].iNeuronQty = atoi(sDummy);
+		if(rSes.iLayerQty==1){
+			rSes.rNet->rLayer[1].iNeuronQty = rSes.iOutputQty;
+			rSes.rNet->rLayer[1].iDendriteQty=rSes.iInputQty;
+			rSes.rNet->rLayer[0].iNeuronQty = rSes.iInputQty;
+			rSes.rNet->rLayer[0].iDendriteQty=0; // layer zero has no dendrites
+		}
+		if(rSes.iLayerQty==2){
+			rSes.rNet->rLayer[2].iNeuronQty = rSes.iOutputQty;
+			rSes.rNet->rLayer[2].iDendriteQty=rSes.iFirstHiddenSize;
+			rSes.rNet->rLayer[1].iNeuronQty = rSes.iFirstHiddenSize;
+			rSes.rNet->rLayer[1].iDendriteQty=rSes.iInputQty;
+			rSes.rNet->rLayer[0].iNeuronQty = rSes.iInputQty;
+			rSes.rNet->rLayer[0].iDendriteQty=0; // layer zero has no dendrites
+		}
+		if(rSes.iLayerQty==3){
+			rSes.rNet->rLayer[3].iNeuronQty = rSes.iOutputQty;
+			rSes.rNet->rLayer[3].iDendriteQty=rSes.iSecondHiddenSize;
+			rSes.rNet->rLayer[2].iNeuronQty = rSes.iSecondHiddenSize;
+			rSes.rNet->rLayer[2].iDendriteQty=rSes.iFirstHiddenSize;
+			rSes.rNet->rLayer[1].iNeuronQty = rSes.iFirstHiddenSize;
+			rSes.rNet->rLayer[1].iDendriteQty=rSes.iInputQty;
+			rSes.rNet->rLayer[0].iNeuronQty = rSes.iInputQty;
+			rSes.rNet->rLayer[0].iDendriteQty=0; // layer zero has no dendrites
+		}
+
+		//if (L) 
+		//	rSes.rNet->rLayer[L].iDendriteQty=rSes.rNet->rLayer[L-1].iNeuronQty; //previous layer's neuron qty is dendrite qty
+		//else 
+		//	rSes.rNet->rLayer[0].iDendriteQty=0; // layer zero has no dendrites
+		//sDummy = strtok (NULL, " ,\t");
+		//++L; //count layers
+	//}
+	mDebug(1,0) for (int i=0; i<rSes.rNet->iLayerQTY; ++i) printf("%s line %d: layer %d neurons %d dendrites %d\n", __FILE__, __LINE__, i, rSes.rNet->rLayer[i].iNeuronQty, rSes.rNet->rLayer[i].iDendriteQty);
 	mDebug(1,0) printf("cuMakeArchValues returns.\n");
 	cout << "NN architecture made" << endl;
 	
-	return rSes.rNet->rLayer[rSes.rNet->iLayerQty-1].iNeuronQty;
+	return rSes.rNet->rLayer[rSes.rNet->iLayerQTY-1].iNeuronQty;
 }
 
 
-long cuNNLoadWeights(struct rohanContext &rSes, FILE *fileInput)
+int cuNNLoadWeights(struct rohanContext &rSes, FILE *fileInput)
 {mIDfunc
 // pulls in values from .wgt files
 // weights are arranged in network order 8 bytes of real, 8 bytes of imaginary
-	long lReturnValue=0, lElementsReturned=0;
-	for (int j=1; j < rSes.rNet->iLayerQty; ++j){ //no weights for layer 0
+	int lReturnValue=0, lElementsReturned=0;
+	for (int j=1; j < rSes.rNet->iLayerQTY; ++j){ //no weights for layer 0
 		struct rohanLayer& lay = rSes.rNet->rLayer[j];
 		for (int k=1; k <= lay.iNeuronQty; ++k){ // no weights for neuron 0
 			for (int i=0; i <= lay.iDendriteQty; ++i){
@@ -209,14 +237,14 @@ long cuNNLoadWeights(struct rohanContext &rSes, FILE *fileInput)
 	return lReturnValue;
 }
 
-long cuSaveNNWeights(struct rohanContext &rSes, FILE *fileOutput)
+int cuSaveNNWeights(struct rohanContext &rSes, FILE *fileOutput)
 {mIDfunc
 // writes values to .wgt files
 // weights are arranged in network order 8 bytes of real, 8 bytes of imaginary
-	long lReturnValue=0;
+	int lReturnValue=0;
 
 	struct rohanNetwork& Net = *rSes.rNet;
-	for (int LAY=1; LAY<Net.iLayerQty; ++LAY){
+	for (int LAY=1; LAY<Net.iLayerQTY; ++LAY){
 		int iNeuronQTY=Net.iNeuronQTY[LAY];
 		int iSignalQTY=Net.iDendrtQTY[LAY]; // signal qty depends on size of previous layer
 		for (int k=1; k < iNeuronQTY; ++k){ // no weights for neuron 0
@@ -233,14 +261,14 @@ long cuSaveNNWeights(struct rohanContext &rSes, FILE *fileOutput)
 	return lReturnValue;
 }
 
-long cuSaveNNWeightsASCII(struct rohanContext &rSes, FILE *fileOutput)
+int cuSaveNNWeightsASCII(struct rohanContext &rSes, FILE *fileOutput)
 {mIDfunc
 // writes values to .txt files
 // weights are arranged in network order 8 bytes of real, 8 bytes of imaginary
-	long lReturnValue=0;
+	int lReturnValue=0;
 
 	struct rohanNetwork& Net = *rSes.rNet;
-	for (int LAY=1; LAY<Net.iLayerQty; ++LAY){
+	for (int LAY=1; LAY<Net.iLayerQTY; ++LAY){
 		int iNeuronQTY=Net.iNeuronQTY[LAY];
 		int iSignalQTY=Net.iDendrtQTY[LAY]; // signal qty depends on size of previous layer
 		for (int k=1; k < iNeuronQTY; ++k){ // no weights for neuron 0
@@ -256,15 +284,21 @@ long cuSaveNNWeightsASCII(struct rohanContext &rSes, FILE *fileOutput)
 	return lReturnValue;
 }
 
-long cuPreSaveNNWeights(struct rohanContext& rSes)
-{mIDfunc
+int cuPreSaveNNWeights(struct rohanContext& rSes, char cVenue)
+{mIDfunc/// saves weights in binary and ASCII form
+	// modified to use rSes.sRohanVerPath 6/21/12
 	FILE *fileOutput;
 	char sFileName[255]; //="DefaultSession";
 	char sFileAscii[255]; //="DefaultSession";
 
-	strncpy(sFileName,rSes.sSesName,250); // do not exceed 254 char file name
+	strncpy(sFileName,rSes.sRohanVerPath,250); // do not exceed 254 char file name
+	strcat(sFileName,"\\");
+	strcat(sFileName,rSes.sSesName); // do not exceed 254 char file name
 	strcat(sFileName,"Rmse");
-	sprintf(sFileName,"%s%d", sFileName, (int)(rSes.dDevRMSE*100));
+	if(cVenue=='D' || cVenue=='d')
+		sprintf(sFileName,"%s%d", sFileName, (int)(rSes.dDevRMSE*100));
+	else
+		sprintf(sFileName,"%s%d", sFileName, (int)(rSes.dHostRMSE*100));
 	strncpy(sFileAscii,sFileName,248); // do not exceed 254 char file name
 	strcat(sFileName,".wgt");
 	strcat(sFileAscii,"WGT.txt");
@@ -276,7 +310,7 @@ long cuPreSaveNNWeights(struct rohanContext& rSes)
 		return 0;
 	}
 	else {
-		long lWWrit=cuSaveNNWeights(rSes, fileOutput);
+		int lWWrit=cuSaveNNWeights(rSes, fileOutput);
 		printf("%d binary weights written to %s\n", lWWrit, sFileName);
 		fileOutput = fopen(sFileAscii, "w");  /* Open in ASCII mode */
 		if (fileOutput == NULL) {
@@ -285,23 +319,23 @@ long cuPreSaveNNWeights(struct rohanContext& rSes)
 			return 0;
 		}
 		else {
-			long lWWrit=cuSaveNNWeightsASCII(rSes, fileOutput);
+			int lWWrit=cuSaveNNWeightsASCII(rSes, fileOutput);
 			printf("%d ASCII weights written to %s\n", lWWrit, sFileAscii);
 			return 1;
 		}	
 	}
 }
 
-long AsciiWeightDump(struct rohanContext& rSes, FILE *fileOutput)
+int AsciiWeightDump(struct rohanContext& rSes, FILE *fileOutput)
 {mIDfunc
 /// outputs values from .wgt files as ASCII text
 /// weights are arranged in network order 8 bytes of real, 8 bytes of imaginary
-	long lReturnValue=0;
+	int lReturnValue=0;
 
 	fprintf(fileOutput, "REAL\tIMAGINARY\tLAYER\tNEURON\tINPUT\n");
 	struct rohanNetwork& Net = *rSes.rNet;
 	
-	for (int LAY=1; LAY<Net.iLayerQty; ++LAY){
+	for (int LAY=1; LAY<Net.iLayerQTY; ++LAY){
 		int iNeuronQTY=Net.iNeuronQTY[LAY];
 		int iSignalQTY=Net.iDendrtQTY[LAY]; // signal qty depends on size of previous layer
 		for (int k=1; k < iNeuronQTY; ++k){ // no weights for neuron 0

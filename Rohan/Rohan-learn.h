@@ -6,18 +6,18 @@
 
 ////int devActivate(struct rohanContext& rSes, int iLayer);
 
-////int devEvalSingleSample(struct rohanContext& rSes, long lSampleIdxReq);
+////int devEvalSingleSample(struct rohanContext& rSes, int lSampleIdxReq);
 
-int dualEvalSingleSample(struct rohanContext& rSes, long lSampleIdxReq)
+int dualEvalSingleSample(struct rohanContext& rSes, int lSampleIdxReq)
 ;
 
-int cuEvalSingleSampleBeta(struct rohanContext& Ses, long s, rohanNetwork& Net, int o, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
+int cuEvalSingleSampleBeta(struct rohanContext& Ses, int s, rohanNetwork& Net, int o, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
 ;
 
-int cuEvalSingleOutput(rohanContext& rSes, long lSampleIdxReq, int iOutputIdxReq)
+int cuEvalSingleOutput(rohanContext& rSes, int lSampleIdxReq, int iOutputIdxReq)
 ;
 
-long OutputValidate(rohanContext& rSes)
+int OutputValidate(rohanContext& rSes)
 ;
 
 ////int devResetAllDeltasAndOutputs(struct rohanContext& rSes);
@@ -25,21 +25,21 @@ long OutputValidate(rohanContext& rSes)
 int cuResetAllDeltasAndOutputs(struct rohanContext& rSes)
 ;
 
-////int devBackpropSingleSample(rohanContext& rSes, long lSampleIdxReq);
+////int devBackpropSingleSample(rohanContext& rSes, int lSampleIdxReq);
 
-int dualBackpropSingleSample(struct rohanContext& rSes, long lSampleIdxReq)
+int dualBackpropSingleSample(struct rohanContext& rSes, int lSampleIdxReq)
 ;
 
-int cuBackpropLearnSet(rohanContext& rSes, long s, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
+int cuBackpropLearnSet(rohanContext& rSes, int s, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
 ;
 
-int cuBackpropSingleSample(rohanContext& rSes, long s, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
+int cuBackpropSingleSample(rohanContext& rSes, int s, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
 ;
 
-int TrainNNThresh(struct rohanContext& rSes, long bChangeWeights, int iSampleQty)
+int TrainNNThresh(struct rohanContext& rSes, int bChangeWeights)
 ;
 
-double RmseNN(struct rohanContext& rSes, long lSampleQtyReq)
+double RmseNN(struct rohanContext& rSes, int o)
 ;
 
 void cuCksum(struct rohanContext& rSes)

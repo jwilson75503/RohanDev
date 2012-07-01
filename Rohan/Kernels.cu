@@ -1,23 +1,8 @@
-/* standard libraries */
-#include <conio.h> //for _getch 
-#include <iostream>
-#include <float.h>
-#include <math.h>  //for M_PI
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <tchar.h>
-#include <sys/timeb.h>
-
-/* CUDA-relevant includes */
-#include <cublas.h>
-#include <cuda.h>
-#include <cuda_runtime_api.h>
-#include <cutil_inline.h>
-#include <multithreading.h>
-
-/* Project includes */
-#include "Rohan.h"
+#ifndef CUDACONLY
+#define CUDACONLY
+/* Includes, cuda */
+#include "stdafx.h"
+//#include "cuPrintf.cu"
 
 extern int iDebugLvl, iDevDebug, iTrace;
 extern float gElapsedTime, gKernelTimeTally;
@@ -32,3 +17,5 @@ extern float gElapsedTime, gKernelTimeTally;
 //__device__ __align__(16) int devlReturn[1024*1024];
 //__device__ __align__(16) int devlTrainable=0;
 //__device__ __align__(16) int iDevDebug=0;
+
+#endif

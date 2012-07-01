@@ -12,7 +12,7 @@
 #define IDX2C( i, j, ld) ((i)+(( j )*( ld )))
 
 // Project defines and constants
-#define MAXLAYERS 3
+#define MAXLAYERS 4
 #define MAXWEIGHTS 1024
 #define MAXNEURONS 256
 #define MAXSHARED 48*1024
@@ -61,12 +61,12 @@ typedef struct rohanNetwork
 	int iWeightOfst[MAXLAYERS];
 	int iSectorQty; // 4
 	int kdiv2; 
-	int iLayerQty; // 4
+	int iLayerQTY; // 4
 	cuDoubleComplex * gWt;
 	cuDoubleComplex * gSignals;
 	cuDoubleComplex * gDeltas;
 	//int iWeightMode; // 4
-	int bContActivation /*! Use Continuous activation function (or not). */;
+	int iContActivation /*! Use Continuous activation function (or not). */;
 	double dK_DIV_TWO_PI; // 8
 	double two_pi_div_sect_qty; // 8
 	cuDoubleComplex *cdcSectorBdry; // 4
@@ -74,7 +74,6 @@ typedef struct rohanNetwork
 	cuDoubleComplex *gpuSectorBdry;
 	rohanLayer *rLayer;
 	rohanLayer *gpuLayer;
-	char* sWeightSet;
 	FILE* fileInput; // 4
 	void* hostNetPtr; // 4 
 } rohanNetwork;
@@ -82,17 +81,16 @@ typedef struct rohanNetwork
 struct rohanLearningSet /*! Learning sets contain a short preamble of parameters followed by delimited data */
 {
 	/// scalar value members
-	long iEvalMode /*! Defaults to discrete outputs but a value of 0 denotes Continuous outputs. */;
-	long lSampleQty /*! # samples to be read from the learning set file; defaults to # samples found*/;
-	long iValuesPerLine /*! Numerical values per line-sample. Inputs + outputs should equal values per line in most cases but some inputs may be intentionally excluded from learning. */;
-	long iInputQty /*! # inputs are per line; defaults to the number of values per line, minus the number of outputs, read from left to right. See bRInJMode. */;
-	long iOutputQty /*! # outputs are per line; defaults to 1. Read from left to right among the rightmost columns. */;
+	//int iEvalMode /*! Defaults to discrete outputs but a value of 0 denotes Continuous outputs. */;
+	int lSampleQty /*! # samples to be read from the learning set file; defaults to # samples found*/;
+	int iValuesPerLine /*! Numerical values per line-sample. Inputs + outputs should equal values per line in most cases but some inputs may be intentionally excluded from learning. */;
+	int iInputQty /*! # inputs are per line; defaults to the number of values per line, minus the number of outputs, read from left to right. See bRInJMode. */;
+	int iOutputQty /*! # outputs are per line; defaults to 1. Read from left to right among the rightmost columns. */;
 	//rohanSample *rSample /*! Array of rohanSample structures. */; //removed 10/24/11
 	FILE *fileInput /*! The filehandle used for reading the learning set from the given file-like object. */; 
-	char *sLearnSet /*! Filename of learning set. */;
-	long bContInputs /*! Inputs have decimals. This may go away in favor of a variety of input types.*/;
-	long iContOutputs /*! Outputs have decimals. */;
-	long lSampleIdxReq /*! index of sample currently or last under consideration. */;
+	int bContInputs /*! Inputs have decimals. This may go away in favor of a variety of input types.*/;
+	int iContOutputs /*! Outputs have decimals. */;
+	int lSampleIdxReq /*! index of sample currently or last under consideration. */;
 	void* hostLearnPtr;
 	/// host space arrays
 	double *dXInputs /*! 1BA, learnable real tuples on host. */;
@@ -115,59 +113,73 @@ struct rohanLearningSet /*! Learning sets contain a short preamble of parameters
 	double *gpudAltYEval /*! generated scalar outputs in GPU by alternate method. Activated. */;
 	double *gpudSqrErr /* 2Darray for intermediate RMSE totals */ ;
 	/// array measurements
-	long IQTY;
-	long OQTY;
-	long INSIZED;
-	long OUTSIZED;
-	long INSIZECX;
-	long OUTSIZECX;
+	int IQTY;
+	int OQTY;
+	int INSIZED;
+	int OUTSIZED;
+	int INSIZECX;
+	int OUTSIZECX;
 };
 
 typedef struct rohanContext
 {
-	long gDebugLvl, iEvalMode, iWarnings, iErrors;
-	long lMemStructAlloc /* tracks allocated memory structures */ ;
-	long bCUDAavailable /*! CUDA-compatible hardware available for use with CUBLAS libraries. */;
-	long bConfigFileUsed /*! Session parameters taken from a config file. XX */;
-	//long bContActivation /*! Use Continuous activation function (or not). */;
-	long bCLargsUsed /*! Command line arguments taken. XX */;
-	long bLearnSetSpecUsed /*! Nonstandard learning set guidelines. XX */;
-	long bConsoleUsed /*! Session is being directed via console input. XX */;
-	long bRInJMode /*! Reverse Input Justification: When active, will read inputs from the same columns but in right to left order to maintain backwards compatibility with some older simulators. */;
-	long bRMSEon /*! diables RMSE tracking for classification problems. XX */;
-	double dMAX /*! Maximum allowable error in sample output reproduction without flagging for backprop learning. */;
-	double dHostRMSE /*! The evaluated Root Mean Square Error over the working sample subset, equivalent to the standard deviation or sigma. */;
-	double dDevRMSE /*! The evaluated Root Mean Square Error over the working sample subset, equivalent to the standard deviation or sigma. */;
-	double dTargetRMSE /*! Acceptable RMSE value for stopping learninig when achieved. */;
-	long iEpochLength /*! iterations per epoch; learning will pause to check once per epoch for further input */;
-	long lSampleQtyReq /*! Size of requested working subset of samples, counted from the top. */;
-	long lSamplesTrainable /*! Number of samples that exceed dMAX criterion. */;
-	long iSaveInputs /* include inputs when saving evaluations */;
-	long iSaveOutputs /* include desired outputs when saving evaluations */;
-	long iSaveSampleIndex /* includes sample serials when saving evaluations */;
-	long iEvalBlocks /*! multithread param for evaluation */;
-	long iEvalThreads /*! multithread param for evaluation */;
-	long iBpropBlocks /*! multithread param for backward propagation */;
-	long iBpropThreads /*! multithread param for backward propagtion */;
-	long iMasterCalcHw /*! master calc hardware -1=CPU, 0-1=CUDA Device */;
+	// ERRORS and progress tracking
+	int iEvalMode, iWarnings, iErrors;
+	int lMemStructAlloc /* tracks allocated memory structures */ ;
+	// eval related
+	int iSaveInputs /* include inputs when saving evaluations */;
+	int iSaveOutputs /* include desired outputs when saving evaluations */;
+	int iSaveSampleIndex /* includes sample serials when saving evaluations */;
+	int iEvalBlocks /*! multithread param for evaluation */;
+	int iEvalThreads /*! multithread param for evaluation */;
+	// hardware related
+	int iMasterCalcHw /*! master calc hardware -1=CPU, 0-1=CUDA Device */;
 	double dMasterCalcVer /*! master calc hardware Compute Capability */;
+	int deviceCount /*! number of CUDA devices attached to host */ ;
+	cudaDeviceProp deviceProp /*! capabilities of the CUDA device currently in use. */ ;
+	// input handling
+	int bConsoleUsed /*! Session is being directed via console input. XX */;
+	int bRInJMode /*! Reverse Input Justification: When active, will read inputs from the same columns but in right to left order to maintain backwards compatibility with some older simulators. */;
+	int bRMSEon /*! diables RMSE tracking for classification problems. XX */;
+	char sLearnSet[256] /*! Filename of learning set. */;
+	char sWeightSet[256] /*! Filename of compelx weight set. (.wgt) */;
+	// internal structure
 	struct rohanNetwork * rNet /*! Active network currently in use for session. */;
 	struct rohanLearningSet * rLearn /*! Active learning set currently in use for session. */;
 	struct rohanNetwork * devNet /*! dev space network currently in use for session. */;
 	struct rohanLearningSet * devLearn /*! dev space learning set currently in use for session. */;
 	struct rohanContext * devSes /*! dev space learning set currently in use for session. */;
 	class cDeviceTeam * ctDraftTeam /*! The calculating "engine" currently in use. */;
+	// learning related
+	int lSamplesTrainable /*! Number of samples that exceed dMAX criterion. */;
+	int iOutputFocus /*! which output is under consideration (0=all) */;
+	int iBpropBlocks /*! multithread param for backward propagation */;
+	int iBpropThreads /*! multithread param for backward propagtion */;
+	double dMAX /*! Maximum allowable error in sample output reproduction without flagging for backprop learning. */;
+	double dHostRMSE /*! The evaluated Root Mean Square Error over the working sample subset, equivalent to the standard deviation or sigma. */;
+	double dDevRMSE /*! The evaluated Root Mean Square Error over the working sample subset, equivalent to the standard deviation or sigma. */;
+	double dRMSE /*! most recent RMSE */;
+	double dTargetRMSE /*! Acceptable RMSE value for stopping learninig when achieved. */;
+	int iEpochLength /*! iterations per epoch; learning will pause to check once per epoch for further input */;
+	// network related
+	int iContActivation /*! Use Continuous activation function (or not). */;
+	int iSectorQty /*! sectors for k-valued logic */;
+	int iFirstHiddenSize /*! nodes specified for first hidden layer */;
+	int iSecondHiddenSize /*! nodes specified for second hidden layer */;
+	int iLayerQty /*! layers with nonzero node qtys specified */;
+	// record keeping
 	FILE *deviceBucket /*! handle used for writing large volumes of diagnostic information to device */;
 	FILE *hostBucket /*! handle used for writing large volumes of diagnostic information to host */;
-	std::ofstream * ofsRLog /*! handle used for writing terse updates to RohanLog.txt. */;
+	std::ofstream * ofsRLog /*! handle used for writing terse updates to RohanLog.txt . */;
+	std::ofstream * ofsHanLog /*! handle used for recording events to [sessionname].han . */;
 	char sRohanVerPath[256] /*! path to Rohan dir in Documents */;
-	char sConfigFileOpt[256] /*! String to parse for config file options. XX */;
-	char sCLargsOpt[256] /*! String to parse for command line arguments. XX  */;
-	char sLearnSetSpecOpt[256] /*! String to parse for special learning set guidelines. XX */;
-	char sConsoleOpt[256] /*! String to parse for console options. XX */;
 	char sSesName[256] /*! Name of .roh file for session. XX */;
-	int deviceCount /*! number of CUDA devices attached to host */ ;
-	cudaDeviceProp deviceProp /*! capabilities of the CUDA device currently in use. */ ;
+	// sample set related
+	int lSampleQty /*! Size of full set of samples, counted from the top. */;
+	int iInputQty /*! # inputs are per line; defaults to the number of values per line, minus the number of outputs, read from left to right. See bRInJMode. */;
+	int iOutputQty /*! # outputs are per line; defaults to 1. Read from left to right among the rightmost columns. */;
+	int lSampleQtyReq /*! Size of requested working subset of samples, counted from the top. */;
+	
 } rohanContext;
 
 #define mCheckMallocWorked(X) if (X == NULL) { printf("%s: malloc fail for x in line %d\n", __FILE__, __LINE__); return 0; } 

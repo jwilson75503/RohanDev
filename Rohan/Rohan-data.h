@@ -5,25 +5,25 @@ int cuMakeNNStructures(struct rohanContext& rSes)
 ;
 int cuSectorTableMake(struct rohanContext& rSes)
 ;
-long cuRandomizeWeightsBlock(struct rohanContext& rSes)
+int cuRandomizeWeightsBlock(struct rohanContext& rSes)
 ;
-long cuRandomizeWeightsLayer(struct rohanContext& rSes)
+int cuRandomizeWeightsLayer(struct rohanContext& rSes)
 ;
 cuDoubleComplex CxActivate(const cuDoubleComplex Z, struct rohanNetwork& Net)
 ;
-long cuConvertInputs16(struct rohanContext& rSes, long lSample, cuDoubleComplex * Sums)
+int cuConvertInputs16(struct rohanContext& rSes, int lSample, cuDoubleComplex * Sums)
 ;
-long cuEvalMidTopLayers16(struct rohanContext& rSes, long lSample, cuDoubleComplex * Sums)
+int cuEvalMidTopLayers16(struct rohanContext& rSes, int lSample, cuDoubleComplex * Sums)
 ;
-long cuOutputConvert16(struct rohanContext& rSes, long lSample, cuDoubleComplex * Sums)
+int cuOutputConvert16(struct rohanContext& rSes, int lSample, cuDoubleComplex * Sums)
 ;
-long cuConvertInputs(struct rohanContext& rSes, long lSample)
+int cuConvertInputs(struct rohanContext& rSes, int lSample)
 ;
-long cuEvalMidTopLayers(struct rohanContext& rSes, long lSample)
+int cuEvalMidTopLayers(struct rohanContext& rSes, int lSample)
 ;
-long cuOutputConvert(struct rohanContext& rSes, long lSample)
+int cuOutputConvert(struct rohanContext& rSes, int lSample)
 ;
-long cuEvalNNLearnSet(struct rohanContext& rSes, int iSampleQty)
+int cuEvalNNLearnSet(struct rohanContext& rSes)
 ;
 ////int cuFreeNNTop(struct rohanContext& rSes);
 int cuFreeLearnSet(struct rohanContext& rSes)
@@ -36,9 +36,9 @@ int devCopyNNStructures(struct rohanContext& rSes)
 ;
 int devCopySectorTable(struct rohanContext& rSes)
 ;
-////long devOutputConvert(struct rohanContext& rSes, long lSample);
-////long devEvalNNLearnSet(struct rohanContext& rSes);
-////long dualRandomizeWeights(struct rohanContext& rSes);
+////int devOutputConvert(struct rohanContext& rSes, int lSample);
+////int devEvalNNLearnSet(struct rohanContext& rSes);
+////int dualRandomizeWeights(struct rohanContext& rSes);
 
 cuDoubleComplex ConvScalarCx(struct rohanContext& rSes, double Scalar)
 ;

@@ -1,27 +1,23 @@
 /* Includes, cuda */
 #include "stdafx.h"
+
 #include <boost/timer/timer.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp> //include all types plus i/o
-#include <boost/date_time/gregorian/gregorian.hpp> //include all types plus i/o
-#include <boost/program_options.hpp>
 using namespace boost::timer;
+
+#include <boost/date_time/posix_time/posix_time.hpp> //include all types plus i/o
 using namespace boost::posix_time;
-using namespace boost::gregorian;
-namespace po = boost::program_options;
-//#include <boost/filesystem.hpp>
-//using namespace boost::filesystem;
-#if defined (_INTEGRAL_MAX_BITS) &&  _INTEGRAL_MAX_BITS >= 64
-typedef signed __int64 int64;
-typedef unsigned __int64 uint64;
-#else
-#error __int64 type not supported
-#endif
 
 extern int gDebugLvl, gDevDebug, gTrace;
-extern long bCUDAavailable;
 extern float gElapsedTime, gKernelTimeTally;
 
 //////////////// class cDrover begins ////////////////
+
+cDrover::cDrover( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& rN, cBarge& cB, cDeviceTeam& cdT)
+{/// begin constructor
+	SetContext(rC, rL, rN); 
+	SetDroverBargeAndTeam(cB, cdT); 
+	/*ShowMe();*/ 
+} // end ctor
 
 void cDrover::ShowMe()
 {
@@ -30,12 +26,16 @@ void cDrover::ShowMe()
 }
 
 
-long cDrover::SetContext( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& rN)
+int cDrover::SetContext( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& rN)
 {/// enables pointer access to master context struct, sets up pointers to toher objects of interest
 	rSes = &rC;
 	// pointers to learning set and network object copies in host memory space are recorded
 	rC.rLearn = &rL;
+	rLearn = &rL;
 	rC.rNet = &rN; 
+	rNet = &rN;
+
+	//rC.dDevRMSE=9.9; rSes->dDevRMSE=8.8; printf("<<<%f - %f>>>\n", rC.dDevRMSE, rSes->dDevRMSE);
 	// pointers to learning set and network object copies in dev memory space are recorded
 	cudaGetSymbolAddress( (void**)&rC.devSes, "devSes" );
 		mCheckCudaWorked
@@ -48,7 +48,7 @@ long cDrover::SetContext( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& 
 }
 
 
-long cDrover::SetDroverBargeAndTeam( class cBarge& cbB, class cDeviceTeam& cdtT)
+int cDrover::SetDroverBargeAndTeam( class cBarge& cbB, class cDeviceTeam& cdtT)
 {mIDfunc /// sets pointers to hitch barge to team and mount driver on barge
 	Barge = &cbB;
 	Team = &cdtT;
@@ -60,209 +60,48 @@ long cDrover::SetDroverBargeAndTeam( class cBarge& cbB, class cDeviceTeam& cdtT)
 }
 
 
-long cDrover::DoAnteLoop(int argc, char * argv[])
+int cDrover::DoAnteLoop(struct rohanContext& rSes, int argc, char * argv[])
 {mIDfunc /// This function prepares all parameters and data structures necesary for learning and evaluation.
 	int iReturn=1;
 	
-	SetProgOptions( *rSes, argc, argv);
-	ObtainGlobalSettings( *rSes);		
-	printf("Rohan v%s Neural Network Simulator\n", VERSION);
-	if(iReturn*=ShowDiagnostics( *rSes, *rSes->rNet ))
-			iReturn*=Barge->ShowDiagnostics();
-
+	if ( Barge->SetProgOptions( rSes, argc, argv ) < 2 ) // narch and samples are required
+		return 0;
+	iReturn=Barge->ObtainGlobalSettings(rSes);
+	iReturn=Barge->ObtainSampleSet(rSes);
+	iReturn=Barge->DoPrepareNetwork(rSes);
+	fprintf(stdout, "Rohan v%s Neural Network Simulator\n", VERSION);
+	if(iReturn*=ShowDiagnostics( rSes, *(rSes.rNet) ))
+			iReturn*=Barge->ShowDiagnostics(); 
+	
 	return iReturn;
 }
 
 
-int cDrover::SetProgOptions(struct rohanContext& rSes, int argc, char * argv[])
-{mIDfunc /// Declare the supported options.
-    try {
-		// Declare a group of options that will be 
-		// allowed only on command line
-		po::options_description generic("Generic options");
-		generic.add_options()
-			("version,v", "print version string")
-			("help,h", "produce help message")
-			("learn,l", po::value< vector<string> >(), "pursue backprop training in pursuit of target RMSE given MAX criterion")
-			("eval,e", po::value< vector<string> >(), "evaluate samples and report")
-			("tag,t", po::value< vector<string> >(), "tag session with an identifying string")
-            ;
-		    
-		// Declare a group of options that will be 
-		// allowed both on command line and in
-		// config file
-		po::options_description config("Configuration");
-		config.add_options()
-            ("net,n", po::value< vector<string> >(), "network sectors, inputs, 1st hidden layer, 2nd hidden layer, outputs")
-			("samples,s", po::value< vector<string> >(), "text file containing sample input-output sets")
-			("weights,w", po::value< vector<string> >(), ".wgt file containing complex weight values")
-			("include-path,I", 
-				 po::value< vector<string> >()->composing(), 
-				 "include path")
-			;
-
-		// Hidden options, will be allowed both on command line and
-		// in config file, but will not be shown to the user.
-		po::options_description hidden("Hidden options");
-		hidden.add_options()
-			("input-file", po::value< vector<string> >(), "input file")
-			; 
-
-		po::options_description cmdline_options;
-		cmdline_options.add(generic).add(config).add(hidden);
-
-		po::options_description config_file_options;
-		config_file_options.add(config).add(hidden);
-
-		po::options_description visible("Allowed options");
-		visible.add(generic).add(config);
-
-        po::variables_map vm;        
-        po::store(po::parse_command_line(argc, argv, cmdline_options), vm);
-        po::notify(vm);    
-
-        if (vm.count("help")) {
-            cout << visible << "\n";
-            return 1;
-        }
-
-        if (vm.count("version")) {
-            cout << VERSION << ".\n";
-        }
-    }
-    catch(exception& e) {
-        cerr << "error: " << e.what() << "\n";
-        return 1;
-    }
-    catch(...) {
-        cerr << "Exception of unknown type!\n";
-    }
-
-    return 0;
-}
-
-
-long cDrover::ObtainGlobalSettings(struct rohanContext& rSes)
-{mIDfunc /// sets initial and default value for globals and settings
-	int iReturn=1;
-	rSes.bConsoleUsed=true;
-	//	globals
-	gTrace=0; 
-	gDebugLvl=0; 
-	// session accrual
-	rSes.iWarnings=0; rSes.iErrors=0; 
-	rSes.lSampleQtyReq=0;
-
-	char sPath[MAX_PATH];
-	GetUserDocPath(sPath);
-	
-	sprintf(rSes.sRohanVerPath, "%s\\Rohan_%s", sPath, VERSION);
-		//cout << rSes.sRohanVerPath << "\n";
-
-	if(DirectoryEnsure(rSes.sRohanVerPath)){
-		sprintf(sPath, "%s\\RohanLog.txt", rSes.sRohanVerPath);
-		rSes.ofsRLog=new ofstream(sPath, std::ios::app|std::ios::out); 
-		*(rSes.ofsRLog) << "\tSTART Rohan v" << VERSION << " Neural Network Application\n";
-		using namespace boost::posix_time; 
-		ptime now = second_clock::local_time(); //use the clock
-
-		AsciiFileHandleWrite(rSes.sRohanVerPath, "DevBucket.txt", &(rSes.deviceBucket));
-		//fprintf(rSes.deviceBucket, "%s\tSTART Rohan v%s Neural Network Application\n", "to_simple_string(now)", VERSION);
-		AsciiFileHandleWrite(rSes.sRohanVerPath, "HostBucket.txt", &(rSes.hostBucket));
-		//fprintf(rSes.hostBucket, "%s\tSTART Rohan v%s Neural Network Application\n", "to_simple_string(now)", VERSION);
-	}
-	else {
-		errPrintf("Directory %s could not be createed\n", rSes.sRohanVerPath);
-		++rSes.iWarnings;
-	}
-	// memory structures
-	rSes.lMemStructAlloc=0;
-	// session modes
-	rSes.bRInJMode=false; 
-	rSes.bRMSEon=true; 
-	rSes.iEpochLength=1000; 
-	rSes.iEvalBlocks=128; 
-	rSes.iEvalThreads=128; 
-	rSes.iBpropBlocks=1; 
-	rSes.iBpropThreads=32; 
-	rSes.iSaveInputs=0 /* include inputs when saving evaluations */;
-	rSes.iSaveOutputs=0 /* include desired outputs when saving evaluations */;
-	rSes.iSaveSampleIndex=0 /* includes sample serials when saving evaluations */;
-	strcpy(rSes.sSesName,"DefaultSession");
-	
-	// learning set modes
-	rSes.rLearn->bContInputs=true; 
-	rSes.rLearn->iContOutputs=false; 
-
-	// network modes
-	rSes.rNet->bContActivation=true; 
-	rSes.dHostRMSE=0.0;
-	rSes.dDevRMSE=0.0;
-
-		if(gTrace) cout << "Tracing is ON.\n" ;
-		if (gDebugLvl){
-			cout << "Debug level is " << gDebugLvl << "\n" ;
-			cout << "Session warning and session error counts reset.\n";
-			rSes.rNet->bContActivation ? cout << "Activation default is CONTINUOUS.\n" : cout << "Activation default is DISCRETE.\n"; 
-			// XX defaulting to false makes all kinds of heck on the GPU
-			rSes.bRInJMode ? cout << "Reversed Input Order is ON.\n" : cout << "Reversed Input Order is OFF.\n"; 
-			// this is working backward for some reason 2/08/11 // still fubared 3/7/12 XX
-			cout << "RMSE stop condition is ON. XX\n"; //
-			cout << "Epoch length is " << rSes.iEpochLength << " iterations.\n";
-			cout << rSes.iEvalBlocks << " EVAL Blocks per Kernel, " << rSes.iEvalThreads << " EVAL Threads per Block.\n";
-			cout << rSes.iBpropBlocks << " BPROP Blocks per Kernel, " << rSes.iBpropThreads << " BPROP Threads per Block.\n";
-			cout << "Continuous Inputs true by DEFAULT.\n";
-			cout << "Continuous Outputs true by DEFAULT.\n";
-		}
-
-	//strcpy(rSes->sCLargsOpt, "blank");
-	//strcpy(rSes->sConfigFileOpt,"blank");
-	//strcpy(rSes->sConsoleOpt,"blank");
-	//strcpy(rSes->sLearnSetSpecOpt,"blank");
-
-	if (Team->CUDAverify(rSes)>=2.0){
-		cutilSafeCall( cudaSetDevice(rSes.iMasterCalcHw) ); /// all cuda calls to run on first device of highest compute capability device located
-		if (gDebugLvl) cout << "CUDA present, device " << rSes.iMasterCalcHw << " selected." << endl;
-	}
-	else {
-		if (rSes.dMasterCalcVer>1.0)
-			fprintf(stderr, "Warning: CUDA hardware below Compute Capability 2.0.\n");
-		else
-			fprintf(stderr, "Warning: No CUDA hardware or no CUDA functions present.\n");
-		rSes.iMasterCalcHw=-1;
-		++rSes.iWarnings;
-		iReturn=0;
-	}
-
-	return iReturn;
-}
-
-
-long cDrover::ShowDiagnostics(struct rohanContext& rSes, struct rohanNetwork& rNet)
+int cDrover::ShowDiagnostics(struct rohanContext& rSes, struct rohanNetwork& rNet)
 {mIDfunc /// show some statistics, dump weights, and display warning and error counts
 	double devdRMSE=0.0, hostdRMSE=0.0;
 	int iReturn=1;
 	cuDoubleComplex keepsakeWts[MAXWEIGHTS]; // 16 x 2048
 	
-	if(rSes.bConsoleUsed)AskSampleSetName(rSes);
-	if(iReturn=Barge->ObtainSampleSet(rSes)){
-		iReturn=Barge->DoPrepareNetwork(rSes);
+	//if(iReturn=Barge->ObtainSampleSet(rSes)){
+	//	iReturn=Barge->DoPrepareNetwork(rSes);
+	if(true){
 		cudaMemcpy( keepsakeWts, rSes.rNet->Wt, 16*MAXWEIGHTS, cudaMemcpyHostToHost); // backup weights for post-test restoration
 		printf("(backup wt %08lX)\n", crc32buf( (char*)rSes.rNet->Wt, 16*MAXWEIGHTS ) ); // weight check
 	
 		Team->LetHitch(rSes);
 		Team->LetSlack(rSes);
 	
-		RmseEvaluateTest(rSes, rNet, 2 , 0);
+		Team->RmseEvaluateTest(rSes, rNet, 2 , 0);
 		// some illustrative default values
 		rSes.dTargetRMSE=floor((sqrt(rSes.dHostRMSE/10)*10)-1.0)+1.0;
 		rSes.dMAX=rSes.dTargetRMSE-2;
 		// more tests
-		//ClassifyTest(rSes, rNet, 8, 0 );
+		Team->ClassifyTest(rSes, rNet, 2, 0 );
 		//rSes.dTargetRMSE=0.0;
 		//rSes.dMAX=0.0;
 		//	SetDevDebug(1); gDevDebug=1;
-		BackPropTest(rSes, rNet, 2, 512, 0);
+		Team->BackPropTest(rSes, rNet, 2, 128, 0);
 		//	SetDevDebug(0);  gDevDebug=0;
 		//cudaMemcpy( rSes.rNet->Wt, keepsakeWts, 16*MAXWEIGHTS, cudaMemcpyHostToHost); // post-test restoration of weights
 		//BackPropTest(rSes, rNet, 1024, 64, 0);
@@ -278,211 +117,14 @@ long cDrover::ShowDiagnostics(struct rohanContext& rSes, struct rohanNetwork& rN
 		printf("(restrd wt %08lX)\n", crc32buf( (char*)rSes.rNet->Wt, 16*MAXWEIGHTS ) ); // weight check
 	}
 	
-	if (rSes.iWarnings) fprintf(stderr, "Diagnosis: %d warnings.\n", rSes.iWarnings);
-	if (rSes.iErrors) fprintf(stderr, "Diagnosis: %d operational errors.\n", rSes.iErrors);
+	if (rSes.iWarnings) fprintf(stderr, "Drover Diagnosis: %d warnings.\n", rSes.iWarnings);
+	if (rSes.iErrors) fprintf(stderr, "Drover Diagnosis: %d operational errors.\n", rSes.iErrors);
 
 	return iReturn;
 }
 
-double cDrover::RmseEvaluateTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iSampleQty)
-{mIDfunc /// runs tests for RMSE and evaluation on both host and GPU
-	int iDifferent=0; double dDifferent=0.0; float fDevTime=0.0;
-	boost::timer::cpu_timer tHost, tDev;
-	boost::timer::cpu_times elapHost, elapDev;
-		// perform a warm-up host eval to eliminate the always-longer first one, return true number of samples, prepare timer to resume @ 0.0;
-		printf("WARMUP:\n");
-			iSampleQty=cuEvalNNLearnSet(rSes, iSampleQty);
-			RmseNN(rSes, iSampleQty); // update dHostRMSE
-		tHost.start();
-		tHost.stop();
-			Team->LetTaut(rSes);
-			Team->GetRmseNN(rSes, iSampleQty);
-			Team->LetSlack(rSes);
-		tDev.start();
-		tDev.stop();
-		char sLog0[80]; sprintf(sLog0, "BEGIN RMSE/EVALUATE TEST: %d TRIALS, %d SAMPLES", iTrials, iSampleQty);
-		printf("\n\n%s\n\n", sLog0); RLog( rSes, sLog0);
-		printf("-------------------------------\n");
-	
-	for(int i=1; i<=iTrials; ++i){
-		//reset values
-		rSes.dDevRMSE = rSes.dHostRMSE = 0.0;
-		// begin dev eval test
-		Team->LetTaut(rSes);
-		tDev.resume();
-			//printf(">>DEVICE: RMSE = %f\n", Team->GetRmseNN(rSes, iSampleQty));
-			Team->GetRmseNN(rSes, iSampleQty);
-		fDevTime+=gElapsedTime; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
-		tDev.stop();
-		Team->LetSlack(rSes);
-		// end dev eval test
 
-		//begin host eval test
-		//printf("HST:");
-		{
-			boost::timer::auto_cpu_timer o;
-			tHost.resume();
-			cuEvalNNLearnSet(rSes, iSampleQty);
-			RmseNN(rSes, iSampleQty); // update dHostRMSE
-			tHost.stop();
-		}
-		// end host eval test
-
-		iDifferent += OutputValidate(rSes);
-		printf("BOTH: %d differences found on verify.\n", iDifferent);
-		dDifferent += rSes.dDevRMSE - rSes.dHostRMSE;
-		printf("BOTH: delta RMSE %f += %f - %f\n", dDifferent, rSes.dDevRMSE, rSes.dHostRMSE);
-		printf("-------------------------------%d\n", i);
-	}
-	elapHost=tHost.elapsed();
-	elapDev =tDev.elapsed();
-	int64 denominator = iTrials*100000; // convert to tenths of milliseconds
-	int64 quotientHost = elapHost.wall / denominator;
-	int64 quotientDev  = elapDev.wall  / denominator;
-	double dAvgTimeHost = (double)quotientHost; 
-	double dAvgTimeDev = (double)quotientDev; 
-	char sLog1[80]; sprintf(sLog1, "Host/Serial mean performance over %d runs: %.1f ms", iTrials, dAvgTimeHost/10);
-	char sLog2[80]; sprintf(sLog2, "Dev/CUDA    mean performance over %d runs: %.1f ms", iTrials, fDevTime/iTrials);
-	char sLog3[14]; sprintf(sLog3, ( (iDifferent || abs(dDifferent)>.001 ) ? "EVALUATE FAIL" : "EVALUATE PASS" ) );
-	printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
-	//sprintf(sLog1, "%s %s", sLog3, sLog1); 
-	RLog(rSes, sLog1);
-	//sprintf(sLog2, "%s %s", sLog3, sLog2); 
-	RLog(rSes, sLog2);
-	RLog(rSes, sLog3);
-	return iDifferent+dDifferent;
-}
-
-int cDrover::ClassifyTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iSampleQty)
-{mIDfunc /// runs classification tests on both host and GPU
-	int iDeviceTrainable, iHostTrainable, iMargin=0;  float fDevTime=0.0;
-	boost::timer::cpu_timer tHost, tDev;
-	boost::timer::cpu_times elapHost, elapDev;
-		// perform a warm-up host eval to eliminate the always-longer first one, return true number of samples, prepare timer to resume @ 0.0;
-		printf("WARMUP:\n");
-			iSampleQty=cuEvalNNLearnSet(rSes, iSampleQty);
-			RmseNN(rSes, iSampleQty); // update dHostRMSE
-		tHost.start();
-		tHost.stop();
-			Team->LetTaut(rSes);
-			Team->GetRmseNN(rSes, iSampleQty);// evaluation is now included in classification tests
-			Team->LetSlack(rSes);
-		tDev.start();
-		tDev.stop();
-	char sLog0[80]; sprintf(sLog0, "BEGIN CLASSIFY TEST: %d TRIALS, %d SAMPLES", iTrials, iSampleQty);
-	printf("\n\n%s\n\n", sLog0); RLog( rSes, sLog0);
-	printf("-------------------------------\n");
-	for(int i=1; i<=iTrials; ++i){
-		// begin trainable sample test DEVICE
-		Team->LetTaut(rSes);
-		tDev.resume();
-			gKernelTimeTally=0.0; //reset global kernel time tally
-			// evaluation is now integrated in device classification tests
-			iMargin+=iDeviceTrainable=Team->LetTrainNNThresh(rSes, iSampleQty, 1, 'E', rSes.dTargetRMSE, rSes.iEpochLength, 'D');
-			fDevTime+=gKernelTimeTally; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
-		tDev.stop();
-		Team->LetSlack(rSes);
-		printf("HST:");
-		{
-			boost::timer::auto_cpu_timer o;
-			tHost.resume();
-				cuEvalNNLearnSet(rSes, iSampleQty); // evaluation is now included separately in host classification tests
-				iMargin -= iHostTrainable=TrainNNThresh(rSes, false, iSampleQty);
-				//iMargin -= iHostTrainable=Team->LetTrainNNThresh(rSes, iSampleQty, 1, 'E', rSes.dTargetRMSE, rSes.iEpochLength, 'H');
-			tHost.stop();
-		}
-		printf("BOTH: delta trainable %d += %d - %d\n", iMargin, iDeviceTrainable, iHostTrainable);
-		printf("-------------------------------%d\n", i);
-		iDeviceTrainable=iHostTrainable=0;
-	}
-
-	elapHost=tHost.elapsed();
-	elapDev =tDev.elapsed();
-	int64 denominator = iTrials*100000; // convert to tenths of milliseconds
-	int64 quotientHost = elapHost.wall / denominator;
-	int64 quotientDev  = elapDev.wall  / denominator;
-	double dAvgTimeHost = (double)quotientHost; 
-	double dAvgTimeDev = (double)quotientDev; 
-	
-	char sLog1[80]; sprintf(sLog1, "Host/Serial mean performance over %d runs: %.1f ms", iTrials, dAvgTimeHost/10);
-	char sLog2[80]; sprintf(sLog2, "Dev/CUDA    mean performance over %d runs: %.1f ms", iTrials, fDevTime/iTrials);
-	char sLog3[14]; sprintf(sLog3, ( iMargin ? "CLASSIFY FAIL" : "CLASSIFY PASS" ) );
-	printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
-	//sprintf(sLog1, "%s %s", sLog3, sLog1); 
-	RLog(rSes, sLog1);
-	//sprintf(sLog2, "%s %s", sLog3, sLog2); 
-	RLog(rSes, sLog2);
-	RLog(rSes, sLog3);
-	return (iMargin);
-}
-
-
-double cDrover::BackPropTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iThreads, int iSampleQty)
-{mIDfunc /// runs tests for backward propagation on both host and GPU
-	double dDifferent=0.0;
-	int iDeviceTrainable, iHostTrainable, iMargin=0, oldThreads=rSes.iBpropThreads;  float fDevTime=0.0;
-	boost::timer::cpu_timer tHost;//, tDev;
-	boost::timer::cpu_times elapHost;//, elapDev;
-	rSes.iBpropThreads=iThreads;
-		// perform a warm-up host eval to eliminate the always-longer first one, return true number of samples, prepare timer to resume @ 0.0;
-		printf("WARMUP:\n");
-			iSampleQty=cuEvalNNLearnSet(rSes, iSampleQty);
-			RmseNN(rSes, iSampleQty); // update hostRMSE
-		tHost.start();
-		tHost.stop();
-			Team->LetTaut(rSes);
-			Team->GetRmseNN(rSes, iSampleQty);// evaluation is now included in classification tests
-			Team->LetSlack(rSes);
-
-	char sLog0[80]; sprintf(sLog0, "BEGIN BACKPROP TEST: %d TRIALS, %d THREADS %d SAMPLES", iTrials, iThreads, iSampleQty);
-	printf("\n\n%s\n\n", sLog0); RLog( rSes, sLog0);
-	printf("-------------------------------\n");
-	Team->LetTaut(rSes);
-	for(int i=1; i<=iTrials; ++i){
-		// begin BACKPROPagation test DEVICE
-			gKernelTimeTally=0.0; //reset global kernel time tally
-			// evaluation is now integrated in device classification tests
-			iMargin+=iDeviceTrainable=Team->LetTrainNNThresh( rSes, iSampleQty, 1, 'R', rSes.dTargetRMSE, 1, 'D'); // backprop all samples, output #1, revise wts, target RMSE, epoch=single iteration YY change E to R
-			dDifferent += Team->GetRmseNN(rSes, iSampleQty);
-			fDevTime+=gKernelTimeTally; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
-		//printf(">>DEVICE: %d samples\n", lSamplesBpropDev);
-		//printf(">>DEVICE: RMSE=%f\n", rSes.dDevRMSE);
-		// end device test
-
-		// begin BACKPROPagation test HOST
-		//conPrintf("HST:");
-		{	
-			boost::timer::auto_cpu_timer o;
-			tHost.resume();
-				cuEvalNNLearnSet(rSes, iSampleQty); // evaluation is now included separately in host classification tests
-				iMargin -= iHostTrainable=TrainNNThresh( rSes, true, iSampleQty); // YY change false to true
-				cuEvalNNLearnSet( rSes, iSampleQty); // re-revaluate learnset
-				dDifferent -= RmseNN( rSes, iSampleQty); // update RMSE
-			tHost.stop();
-		}
-		// end host test
-		printf("BOTH: delta RMSE %f += %f - %f", dDifferent, rSes.dDevRMSE, rSes.dHostRMSE);
-		//printf("BOTH: delta trainable %d += %d - %d\n", iMargin, iDeviceTrainable, iHostTrainable);
-		printf("----------------------%d\n", i);
-		iDeviceTrainable=iHostTrainable=0;
-	}
-	Team->LetSlack(rSes);
-	elapHost=tHost.elapsed();
-	int64 denominator = iTrials*100000; // convert to tenths of milliseconds
-	int64 quotientHost = elapHost.wall / denominator;
-	double dAvgTimeHost = (double)quotientHost; 
-	rSes.iBpropThreads=oldThreads;
-	char sLog1[80]; sprintf(sLog1, "Host/Serial mean performance over %d runs: %.1f ms", iTrials, dAvgTimeHost/10); //converted from tenths of ms to full ms
-	char sLog2[80]; sprintf(sLog2, "Dev/CUDA    mean performance over %d runs: %.1f ms", iTrials, fDevTime/iTrials);
-	char sLog3[14]; sprintf(sLog3, ( (iMargin || abs(dDifferent)>.001 ) ? "BACKPROP FAIL" : "BACKPROP PASS" ) );
-	printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
-	RLog(rSes, sLog1);
-	RLog(rSes, sLog2);
-	RLog(rSes, sLog3);
-	return (iMargin+dDifferent);
-}
-
-long cDrover::AskSampleSetName(struct rohanContext& rSes)
+int cDrover::AskSampleSetName(struct rohanContext& rSes)
 {mIDfunc /// chooses the learning set to be worked with Ante-Loop
 	int iReturn=0; 
 	//rSes.rLearn->bContInputs=false;
@@ -494,66 +136,119 @@ long cDrover::AskSampleSetName(struct rohanContext& rSes)
 	std::cin >> gDebugLvl;
 	switch ( gDebugLvl % 10) {
 		case 0:
-		  rSes.rLearn->sLearnSet="AirplanePsDN1W3S10k.txt";
+		  strcpy(rSes.sLearnSet, "AirplanePsDN1W3S10k.txt");
 		  break;
 		case 1:
-		  rSes.rLearn->sLearnSet="trivial3331.txt";
+		  strcpy(rSes.sLearnSet, "trivial3331.txt");
 		  break;
 		case 2:
-		  rSes.rLearn->sLearnSet="iris.txt";
+		  strcpy(rSes.sLearnSet, "iris.txt");
 		  break;
 		case 3:
-		  rSes.rLearn->sLearnSet="trivial221.txt";
+		  strcpy(rSes.sLearnSet, "trivial221.txt");
 		  break;
 		case 4:
-		  rSes.rLearn->sLearnSet="trivial3.txt";	
+		  strcpy(rSes.sLearnSet, "trivial3.txt");	
 		  break;
 		case 5:
-		  rSes.rLearn->sLearnSet="PC-63-32-200-LearnSet.txt";
+		  strcpy(rSes.sLearnSet, "PC-63-32-200-LearnSet.txt");
 		  break;
 		case 6:
-		  rSes.rLearn->sLearnSet="LenaPsDN2W3S10k.txt";
+		  strcpy(rSes.sLearnSet, "LenaPsDN2W3S10k.txt");
 		  break;
 		case 7:
-		  rSes.rLearn->sLearnSet="LenaPsUN2W3S10k.txt";
+		  strcpy(rSes.sLearnSet, "LenaPsUN2W3S10k.txt");
 		  break;
 		default:
-		  rSes.rLearn->sLearnSet="iris.txt";
+		  strcpy(rSes.sLearnSet, "iris.txt");
 		  break;
 	}
-	rSes.gDebugLvl=gDebugLvl/=10; // drop final digit
+	gDebugLvl/=10; // drop final digit
 	if (gDebugLvl) fprintf(stderr, "Debug level is %d.\n", gDebugLvl);
 	return iReturn;
 }
 
 
-long cDrover::DoMainLoop(struct rohanContext& rSes)
+int cDrover::DoMainLoop(struct rohanContext& rSes)
 {mIDfunc /// Trains a weight set to more closely reproduce the sampled outputs from the sampled inputs, and other options.
 	int iReturn=0, iSelect=1;
-	cout << "Main duty loop begin." << endl;
 	
-	while(iSelect){
-		//Team->LetSlack(rSes);
-		//Team->LetEvalSet(rSes, rSes.lSampleQtyReq, 'H');
-		//rSes.dRMSE = RmseNN(rSes, rSes.lSampleQtyReq);
-		iSelect=DisplayMenu(0, rSes);
-		if (iSelect==1) iReturn=BeginSession(rSes); // new or resume session
-		if (iSelect==2) iReturn=GetNNTop(rSes);
-		//if (iSelect==3) iReturn=ReGetSampleSet(rSes); XX
-		if (iSelect==4) iReturn=GetWeightSet(rSes);
-		if (iSelect==5) iReturn=this->LetInteractiveEvaluation(rSes);
-		if (iSelect==6) iReturn=this->LetInteractiveLearning(rSes);
-		if (iSelect==7) iReturn=cuPreSaveNNWeights(rSes);
-		if (iSelect==8) {iReturn=cuRandomizeWeightsBlock(rSes); 
-						Team->LetEvalSet(rSes, rSes.lSampleQtyReq, 'H'); // this is performed on the host
-						//rSes.dRMSE = RmseNN(rSes, rSes.lSampleQtyReq);
-						RmseNN(rSes, rSes.lSampleQtyReq);
-		}
-		if (iSelect==9) iReturn=this->LetUtilities(rSes);
-		
-		//SilentDiagnostics(rSes);
+	cout << "Main duty loop begin." << endl;
+	if(rSes.bConsoleUsed){
+			while(iSelect ){
+				//Team->LetSlack(rSes);
+				//Team->LetEvalSet(rSes, rSes.lSampleQtyReq, 'H');
+				//rSes.dRMSE = RmseNN(rSes, rSes.lSampleQtyReq);
+				iSelect=DisplayMenu(0, rSes);
+				if (iSelect==1) iReturn=BeginSession(rSes); // new or resume session
+				if (iSelect==2) iReturn=GetNNTop(rSes);
+				//if (iSelect==3) iReturn=ReGetSampleSet(rSes); XX
+				if (iSelect==4) iReturn=GetWeightSet(rSes);
+				if (iSelect==5) iReturn=this->LetInteractiveEvaluation(rSes);
+				if (iSelect==6) iReturn=this->LetInteractiveLearning(rSes);
+				if (iSelect==7) iReturn=cuPreSaveNNWeights(rSes, 'D');
+				if (iSelect==8) {iReturn=cuRandomizeWeightsBlock(rSes); 
+								Team->LetEvalSet(rSes, 'H'); // this is performed on the host
+								RmseNN(rSes, 0);
+				}
+				if (iSelect==9) iReturn=this->LetUtilities(rSes);
+			}
 	}
-	return 0;
+	else {
+		
+		if (Barge->vm.count("learn")) {
+            vector<double> v;
+			cout << "learn " << Barge->vm["learn"].as<string>() << "\n";
+			Barge->OptionToDoubleVector("learn", v);
+			if(v.size()==4){ // all params present, hopefully valid
+				rSes.dTargetRMSE = v.at(0);
+				rSes.dMAX = v.at(1);
+				rSes.lSampleQtyReq = (int)v.at(2);
+				rSes.iBpropThreads = (int)v.at(3) * 32; // Warp factor 1, Mr Sulu!
+				// perform learning
+				char cVenue;
+				if(rSes.iBpropThreads) //printf("AUTOMATED DEVICE LEARNING HERE\n");
+					cVenue='D';
+				else
+					cVenue='H';
+				rSes.lSamplesTrainable=Team->LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, rSes.iEpochLength, cVenue);
+				cuPreSaveNNWeights(rSes, cVenue);
+				printf("Training terminates with %2.2f RMSE achieved towards %2.2f %c target RMSE\n", rSes.dRMSE, rSes.dTargetRMSE, cVenue);
+			}
+			else{ // missing or extra parameters
+				if(v.size()<4){
+
+				}
+				else {
+				}
+			}
+        }
+
+        if (Barge->vm.count("eval")) {
+			vector<int> v;
+            cout << "eval " << Barge->vm["eval"].as<string>() << "\n";
+			Barge->OptionToIntVector("eval", v);
+			rSes.iSaveSampleIndex = v.at(0);
+			rSes.iSaveInputs = v.at(1);
+			rSes.iSaveOutputs = v.at(2);
+			rSes.lSampleQtyReq = v.at(3);
+			Team->GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'D');
+			//Team->LetSlack(rSes); // make sure device outputs are transferred back to host
+			printf("%s: first %d samples requested\nRMSE= %f\n", rSes.sWeightSet, rSes.lSampleQtyReq, rSes.dDevRMSE);		
+			// write evaluation report
+			char sLog[255], sFileAscii[255];
+			sprintf(sFileAscii,"%s%d%s",rSes.sSesName, (int)(rSes.dRMSE*100), "Evals.txt"); // do not exceed 254 char file name
+			int lReturn=Barge->LetWriteEvals(rSes, *rSes.rLearn);
+			// Log event
+			sprintf(sLog, "%d evals writen to %s", lReturn, sFileAscii ); // document success and filename
+			printf("%s\n", sLog);
+			Barge->RLog(rSes, sLog);
+			// include report for GUI
+			sprintf(sLog, "report=%s\n", sFileAscii);
+			Barge->HanReport(rSes, sLog);
+        }
+	}
+	return iReturn;
 }
 
 
@@ -561,8 +256,8 @@ int cDrover::DisplayMenu(int iMenuNum, struct rohanContext& rSes)
 {mIDfunc
 	char a='.';
 	//refresh RMSE
-	cuEvalNNLearnSet(rSes, rSes.lSampleQtyReq);
-	RmseNN(rSes, rSes.lSampleQtyReq);
+	cuEvalNNLearnSet(rSes);
+	RmseNN(rSes, rSes.iOutputFocus);
 	
 	//list menu items
 	if(iMenuNum==0){
@@ -627,10 +322,10 @@ int cDrover::DisplayMenu(int iMenuNum, struct rohanContext& rSes)
 
 int cDrover::CLIbase(struct rohanContext& rSes)
 {mIDfunc /// displays the base information common to each/most menus
-		printf("\n %s %d samples MAX %f, %d trainable", rSes.rLearn->sLearnSet, rSes.rLearn->lSampleQty, rSes.dMAX, 
-			TrainNNThresh(rSes, false, rSes.lSampleQtyReq));
+		printf("\n %s %d samples MAX %f, %d trainable", rSes.sLearnSet, rSes.rLearn->lSampleQty, rSes.dMAX, 
+			TrainNNThresh(rSes, false));
 		printf("\nRMSE: D %f, Y %f/%f ", rSes.dTargetRMSE, rSes.dHostRMSE, rSes.dDevRMSE);
-		for(int i=0;i<rSes.rNet->iLayerQty;++i)
+		for(int i=0;i<rSes.rNet->iLayerQTY;++i)
 			printf("L%d %d; ", i, rSes.rNet->rLayer[i].iNeuronQty);
 		printf("%d sectors ", rSes.rNet->iSectorQty);
 		if (rSes.bRInJMode) printf("ReverseInput "); 
@@ -671,7 +366,7 @@ int cDrover::GetNNTop(struct rohanContext& rSes)
 		printf("Random weights loaded.\n");
 		printf("%d-valued logic sector table made.\n", cuSectorTableMake(rSes));
 		printf("\n");
-		return rSes.rNet->iLayerQty;
+		return rSes.rNet->iLayerQTY;
 	}
 	else
 		return 999;
@@ -682,7 +377,7 @@ int cuMakeNNStructures(struct rohanContext &rSes)
 /*! Initializes a neural network structure of the given number of layers and
  *  layer populations, allocates memory, and populates the set of weight values randomly.
  *
- * iLayerQty = 3 means Layer 1 and Layer 2 are "full" neurons, with output-only neurons on layer 0.
+ * iLayerQTY = 3 means Layer 1 and Layer 2 are "full" neurons, with output-only neurons on layer 0.
  * 0th neuron on each layer is a stub with no inputs and output is alawys 1+0i, to accomodate internal weights of next layer.
  * This allows values to be efficiently calculated by referring to all layers and neurons identically.
  * 
@@ -692,14 +387,14 @@ int cuMakeNNStructures(struct rohanContext &rSes)
  * iNeuronQTY[1] is # of neurons in Layer 1, including 0
  * iNeuronQTY[2] is # of neurons in Layer 2, including 0 */
 
-	long lReturn=0;
+	int lReturn=0;
 //const cuDoubleComplex cdcZero = { 0, 0 }, 
 	const cuDoubleComplex cdcInit = { -999.0, 999.0 };
 	//cdcInit.x=-999.0; cdcInit.y=999.0;
-	for (int i=0; i < rSes.rNet->iLayerQty; ++i){  //Layer Zero has no need of weights! 8/13/2010
+	for (int i=0; i < rSes.rNet->iLayerQTY; ++i){  //Layer Zero has no need of weights! 8/13/2010
 		struct rohanLayer& lay = rSes.rNet->rLayer[i];
 		struct rohanNetwork * rnSrc = rSes.rNet;
-		long DQTY, NQTY, WQTY, DSIZE, NSIZE, WSIZE, L=i;
+		int DQTY, NQTY, WQTY, DSIZE, NSIZE, WSIZE, L=i;
 		//setup dimension values
 		DQTY = rnSrc->rLayer[L].iDendriteQty + 1 ; // dendrites = incoming signals
 		DSIZE = DQTY * sizeof(cuDoubleComplex) ;
@@ -775,7 +470,7 @@ int cDrover::GetWeightSet(struct rohanContext& rSes)
 }
 
 
-long cDrover::LetInteractiveEvaluation(struct rohanContext& rSes)
+int cDrover::LetInteractiveEvaluation(struct rohanContext& rSes)
 {mIDfunc /// allows user to ask for different number of samples to be evaluated
 	int iReturn=0, iSelect=1;
 	
@@ -787,20 +482,22 @@ long cDrover::LetInteractiveEvaluation(struct rohanContext& rSes)
 		if (iSelect==1) {rSes.iSaveInputs=(rSes.iSaveInputs ? false: true); }
 		if (iSelect==2) {rSes.iSaveOutputs=(rSes.iSaveOutputs ? false: true); }
 		if (iSelect==3) {rSes.iSaveSampleIndex=(rSes.iSaveSampleIndex ? false: true); }
-		if (iSelect==4) {printf("Enter samples requested\n");std::cin >> rSes.lSampleQtyReq;} //
+		if (iSelect==4) {printf("Enter requested sample qty\n");std::cin >> rSes.lSampleQtyReq;
+							if(rSes.lSampleQtyReq<1 || rSes.lSampleQtyReq > rSes.rLearn->lSampleQty)
+								rSes.lSampleQtyReq=rSes.rLearn->lSampleQty;} 
 		if (iSelect==5) { // serial values are computed and then displayed
 					++iReturn; 
 					boost::timer::auto_cpu_timer t;
-					cuEvalNNLearnSet(rSes, rSes.lSampleQtyReq);
-					RmseNN(rSes, rSes.lSampleQtyReq);
-					printf("%s: first %d samples requested\nRMSE= %f", rSes.rNet->sWeightSet, rSes.lSampleQtyReq, rSes.dHostRMSE);		
+					cuEvalNNLearnSet(rSes);
+					RmseNN(rSes, rSes.iOutputFocus);
+					printf("%s: first %d samples requested\nRMSE= %f", rSes.sWeightSet, rSes.lSampleQtyReq, rSes.dHostRMSE);		
 		}
 		if (iSelect==6) { // asynchronous kernel launch
 					++iReturn;
 					// device values are computed and then displayed
-					Team->LetEvalSet(rSes, rSes.lSampleQtyReq, 'D'); // eval on device
-					Team->GetRmseNN(rSes, rSes.lSampleQtyReq);
-					printf("%s: first %d samples requested\nRMSE= %f", rSes.rNet->sWeightSet, rSes.lSampleQtyReq, rSes.dDevRMSE);		
+					//Team->LetEvalSet(rSes, 'D'); // eval on device
+					Team->GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'D');
+					printf("%s: first %d samples requested\nRMSE= %f", rSes.sWeightSet, rSes.lSampleQtyReq, rSes.dDevRMSE);		
 		}
 		if (iSelect==7) {printf("Enter blocks per kernel\n");std::cin >> rSes.iEvalBlocks;}
 		if (iSelect==8) {printf("Enter threads per block\n");std::cin >> rSes.iEvalThreads;}
@@ -811,7 +508,7 @@ long cDrover::LetInteractiveEvaluation(struct rohanContext& rSes)
 }
 
 
-long cDrover::LetInteractiveLearning(struct rohanContext& rSes)
+int cDrover::LetInteractiveLearning(struct rohanContext& rSes)
 {mIDfunc /// allows user to select learning thresholds
 	int iReturn=0, iSelect=1;
 	
@@ -823,13 +520,14 @@ long cDrover::LetInteractiveLearning(struct rohanContext& rSes)
 		if (iSelect==1) {printf("Enter desired RMSE for learning\n");std::cin >> rSes.dTargetRMSE;}
 		if (iSelect==2) {printf("Enter MAX allowable error per sample\n");std::cin >> rSes.dMAX;}
 		if (iSelect==3) {printf("Enter iterations per epoch\n");std::cin >> rSes.iEpochLength;}
-		if (iSelect==4) {printf("Enter samples requested\n");std::cin >> rSes.lSampleQtyReq;} //
+		if (iSelect==4) {printf("Enter samples requested\n");std::cin >> rSes.lSampleQtyReq;	 
+							if(rSes.lSampleQtyReq<2 || rSes.lSampleQtyReq > rSes.rLearn->lSampleQty)
+								rSes.lSampleQtyReq=rSes.rLearn->lSampleQty;} 
 		//if (iSelect==5) {} // synchronous kernel launch
 		if (iSelect==6) { // asynchronous kernel launch
 					++iReturn;
 							Team->LetTaut(rSes);
-							//rSes.lSamplesTrainable=knlBackProp( rSes, rSes.lSampleQtyReq, 1, 'R');
-							rSes.lSamplesTrainable=Team->LetTrainNNThresh( rSes, rSes.lSampleQtyReq, 1, 'R', rSes.dTargetRMSE, rSes.iEpochLength, 'D');
+							rSes.lSamplesTrainable=Team->LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, rSes.iEpochLength, 'D');
 		}
 		if (iSelect==7) {printf("Enter blocks per kernel\n");std::cin >> rSes.iBpropBlocks;}
 		if (iSelect==8) {printf("Enter threads per block\n");std::cin >> rSes.iBpropThreads;}
@@ -840,7 +538,7 @@ long cDrover::LetInteractiveLearning(struct rohanContext& rSes)
 }
 
 
-long cDrover::LetUtilities(struct rohanContext& rSes)
+int cDrover::LetUtilities(struct rohanContext& rSes)
 {mIDfunc /// allows user to select learning thresholds
 	int iReturn=0, iSelect=1;
 	int iEpoch=rSes.iEpochLength;
@@ -884,29 +582,23 @@ long cDrover::LetUtilities(struct rohanContext& rSes)
 }
 
 
-void cDrover::RLog(struct rohanContext& rSes, char * sLogEntry)
-{mIDfunc // logs strings describing events, preceeded by the local time
-	using namespace boost::posix_time; 
-    ptime now = second_clock::local_time(); //use the clock 
-    sLogEntry=strtok(sLogEntry, "\n"); // trim any trailing chars
-	*(rSes.ofsRLog) << now << " " << sLogEntry  << endl;
-}
-
-
-long cDrover::DoPostLoop(struct rohanContext& rSes) 
+int cDrover::DoPostLoop(struct rohanContext& rSes) 
 {mIDfunc /// Final operations including freeing of dynamically allocated memory are called from here. 
 	int iReturn=0, iSelect=0;
 
 	DoEndItAll(rSes);
-	printf("Program terminated after %d warning(s), %d operational error(s).\n", rSes.iWarnings, rSes.iErrors);
+	printf("Simulation terminated after %d warning(s), %d operational error(s).\n", rSes.iWarnings, rSes.iErrors);
+#ifdef _DEBUG
 	printf("Waiting on keystroke...\n");
 	_getch();
+#endif
+	// call to source tracking here? 6/23/12
 
 	return 0;
 }
 
 
-long cDrover::DoEndItAll(struct rohanContext& rSes)
+int cDrover::DoEndItAll(struct rohanContext& rSes)
 {mIDfunc /// prepares for graceful ending of program
 	int iReturn=0;
 

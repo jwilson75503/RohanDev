@@ -29,15 +29,15 @@ int _tmain(int argc, _TCHAR* argv[])
 	struct rohanLearningSet rLearn;
 
 	// create class objects
-	cDeviceTeam cdtHorse(rSes); // the horse handles GPU computation kernels and their currency
+	cDeviceTeam cdtHorse(rSes); // the horse does the work of computation
 	cBarge cbBarge(rSes); // the barge loads and holds common data like the learning set and weights
 	cDrover cdDrover(rSes, rLearn, rNet, cbBarge, cdtHorse); // the drover handles the user interface and directs the other objects
 
 	// proceed with operations based on session variables and external settings
-	if(cdDrover.DoAnteLoop(argc, argv)){
+	if(cdDrover.DoAnteLoop(rSes, argc, argv)){
 		cdDrover.DoMainLoop(rSes);
+		cdDrover.DoPostLoop(rSes); // postloop moved inside 6/25/12
 	}
-	cdDrover.DoPostLoop(rSes);
 	
 	// end of operations
 	exit (0);
