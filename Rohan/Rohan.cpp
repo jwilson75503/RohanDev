@@ -2,19 +2,19 @@
  *
  * \section intro_sec Introduction
  *
- * Rohan was developed by Jeff Wilson <jwilson@clueland.com> at the Texas A&M University - Texarkana Computational Intelligence Laboratory < http://www.tamut.edu/CIL/ > under the direction of Dr Igor Aizenberg.
+ * Rohan was developed by Jeff Wilson <jwilson@clueland.com> at the Texas A&M
  *
- * Funded by National Science Foundation grant #0925080
+ * University - Texarkana Computational Intelligence Laboratory 
  *
- * \section install_sec Installation
+ * < http://www.tamut.edu/CIL/ > under the direction of Dr Igor Aizenberg.
  *
- * \subsection step1 Step 1: Opening the box
- *  
- * Hopefully included in the 1.0 or later release.
+ * Rohan is part of research funded by National Science Foundation grant #0925080.
+ *
  */
+
 // Rohan.cpp : Defines the entry point for the console application.
 
-/* Includes, cuda */
+/* Includes */
 #include "stdafx.h"
 
 /// globals
@@ -24,21 +24,20 @@ float gElapsedTime=0.0, gKernelTimeTally=0.0;
 
 int _tmain(int argc, _TCHAR* argv[])
 {mIDfunc/// general program procedure is to setup preparations for the duty loop, execute it, then do housekeeping after
-	struct rohanContext rSes /* This is the master session context object, with pointers to the learning set and network objects as members */;
+
+	/* The session context holder, learning set, and network need to be structs since they are passed to CUDA C code that doesn't do classes */
+	struct rohanContext rSes;
 	struct rohanNetwork rNet;
 	struct rohanLearningSet rLearn;
 
 	// create class objects
-	cDeviceTeam cdtHorse(rSes); // the horse does the work of computation
-	cBarge cbBarge(rSes); // the barge loads and holds common data like the learning set and weights
-	cDrover cdDrover(rSes, rLearn, rNet, cbBarge, cdtHorse); // the drover handles the user interface and directs the other objects
+	cTeam Team(rSes); // the horse team does the work of computation
+	cBarge Barge(rSes); // the barge loads and holds common data like the learning set and weights
+	cDrover Drover(rSes, rLearn, rNet, Barge, Team); // the drover handles the user input and bosses the other objects
 
-	// proceed with operations based on session variables and external settings
-	if(cdDrover.DoAnteLoop(rSes, argc, argv)){
-		cdDrover.DoMainLoop(rSes);
-		cdDrover.DoPostLoop(rSes); // postloop moved inside 6/25/12
-	}
+	if ( Drover.DoAnteLoop(rSes, argc, argv) ) // prepare data structures and load parameters
+		Drover.DoMainLoop(rSes); // proceed with operations based on session variables and external settings
+	Drover.DoPostLoop(rSes); // terminates sim "gracefully"
 	
-	// end of operations
-	exit (0);
+	exit (0); // end of operations
 }

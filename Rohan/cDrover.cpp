@@ -12,11 +12,11 @@ extern float gElapsedTime, gKernelTimeTally;
 
 //////////////// class cDrover begins ////////////////
 
-cDrover::cDrover( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& rN, cBarge& cB, cDeviceTeam& cdT)
+cDrover::cDrover( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& rN, cBarge& cB, cTeam& cT)
 {/// begin constructor
 	SetContext(rC, rL, rN); 
-	SetDroverBargeAndTeam(cB, cdT); 
-	/*ShowMe();*/ 
+	SetDroverBargeAndTeam(cB, cT); 
+	//ShowMe();
 } // end ctor
 
 void cDrover::ShowMe()
@@ -48,14 +48,16 @@ int cDrover::SetContext( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& r
 }
 
 
-int cDrover::SetDroverBargeAndTeam( class cBarge& cbB, class cDeviceTeam& cdtT)
+int cDrover::SetDroverBargeAndTeam( class cBarge& cB, class cTeam& cT)
 {mIDfunc /// sets pointers to hitch barge to team and mount driver on barge
-	Barge = &cbB;
-	Team = &cdtT;
+	Barge = &cB;
+	Team = &cT;
 	Barge->SetDrover(this);
 	Barge->SetTeam(Team);
 	Team->SetDrover(this);
 	Team->SetBarge(Barge);
+	rSes->Team=&cT;
+	
 	return 0;
 }
 
@@ -64,12 +66,12 @@ int cDrover::DoAnteLoop(struct rohanContext& rSes, int argc, char * argv[])
 {mIDfunc /// This function prepares all parameters and data structures necesary for learning and evaluation.
 	int iReturn=1;
 	
+	fprintf(stdout, "Rohan v%s Neural Network Simulator\n", VERSION);
 	if ( Barge->SetProgOptions( rSes, argc, argv ) < 2 ) // narch and samples are required
 		return 0;
 	iReturn=Barge->ObtainGlobalSettings(rSes);
 	iReturn=Barge->ObtainSampleSet(rSes);
 	iReturn=Barge->DoPrepareNetwork(rSes);
-	fprintf(stdout, "Rohan v%s Neural Network Simulator\n", VERSION);
 	if(iReturn*=ShowDiagnostics( rSes, *(rSes.rNet) ))
 			iReturn*=Barge->ShowDiagnostics(); 
 	
@@ -83,11 +85,9 @@ int cDrover::ShowDiagnostics(struct rohanContext& rSes, struct rohanNetwork& rNe
 	int iReturn=1;
 	cuDoubleComplex keepsakeWts[MAXWEIGHTS]; // 16 x 2048
 	
-	//if(iReturn=Barge->ObtainSampleSet(rSes)){
-	//	iReturn=Barge->DoPrepareNetwork(rSes);
-	if(true){
+#ifdef _DEBUG
 		cudaMemcpy( keepsakeWts, rSes.rNet->Wt, 16*MAXWEIGHTS, cudaMemcpyHostToHost); // backup weights for post-test restoration
-		printf("(backup wt %08lX)\n", crc32buf( (char*)rSes.rNet->Wt, 16*MAXWEIGHTS ) ); // weight check
+		//printf("(backup wt %08lX)\n", crc32buf( (char*)rSes.rNet->Wt, 16*MAXWEIGHTS ) ); // weight check
 	
 		Team->LetHitch(rSes);
 		Team->LetSlack(rSes);
@@ -114,8 +114,8 @@ int cDrover::ShowDiagnostics(struct rohanContext& rSes, struct rohanNetwork& rNe
 		//RmseEvaluateTest(rSes, rNet, 1 , 1);
 		
 		cudaMemcpy( rSes.rNet->Wt, keepsakeWts, 16*MAXWEIGHTS, cudaMemcpyHostToHost); // post-test restoration of weights
-		printf("(restrd wt %08lX)\n", crc32buf( (char*)rSes.rNet->Wt, 16*MAXWEIGHTS ) ); // weight check
-	}
+		//printf("(restrd wt %08lX)\n", crc32buf( (char*)rSes.rNet->Wt, 16*MAXWEIGHTS ) ); // weight check
+#endif	
 	
 	if (rSes.iWarnings) fprintf(stderr, "Drover Diagnosis: %d warnings.\n", rSes.iWarnings);
 	if (rSes.iErrors) fprintf(stderr, "Drover Diagnosis: %d operational errors.\n", rSes.iErrors);
@@ -173,82 +173,100 @@ int cDrover::DoMainLoop(struct rohanContext& rSes)
 {mIDfunc /// Trains a weight set to more closely reproduce the sampled outputs from the sampled inputs, and other options.
 	int iReturn=0, iSelect=1;
 	
-	cout << "Main duty loop begin." << endl;
+	Barge->RLog(rSes, USERF, "Main duty loop begin.");
 	if(rSes.bConsoleUsed){
 			while(iSelect ){
-				//Team->LetSlack(rSes);
-				//Team->LetEvalSet(rSes, rSes.lSampleQtyReq, 'H');
-				//rSes.dRMSE = RmseNN(rSes, rSes.lSampleQtyReq);
 				iSelect=DisplayMenu(0, rSes);
-				if (iSelect==1) iReturn=BeginSession(rSes); // new or resume session
+				if (iSelect==1) iReturn=AskSessionName(rSes); // new or resume session
 				if (iSelect==2) iReturn=GetNNTop(rSes);
 				//if (iSelect==3) iReturn=ReGetSampleSet(rSes); XX
 				if (iSelect==4) iReturn=GetWeightSet(rSes);
-				if (iSelect==5) iReturn=this->LetInteractiveEvaluation(rSes);
-				if (iSelect==6) iReturn=this->LetInteractiveLearning(rSes);
-				if (iSelect==7) iReturn=cuPreSaveNNWeights(rSes, 'D');
+				if (iSelect==5) iReturn=LetInteractiveEvaluation(rSes);
+				if (iSelect==6) iReturn=LetInteractiveLearning(rSes);
+				if (iSelect==7) iReturn=Barge->cuPreSaveNNWeights(rSes, 'D');
 				if (iSelect==8) {iReturn=cuRandomizeWeightsBlock(rSes); 
 								Team->LetEvalSet(rSes, 'H'); // this is performed on the host
 								RmseNN(rSes, 0);
 				}
-				if (iSelect==9) iReturn=this->LetUtilities(rSes);
+				if (iSelect==9) iReturn=LetUtilities(rSes);
 			}
 	}
 	else {
 		
 		if (Barge->vm.count("learn")) {
-            vector<double> v;
-			cout << "learn " << Barge->vm["learn"].as<string>() << "\n";
-			Barge->OptionToDoubleVector("learn", v);
-			if(v.size()==4){ // all params present, hopefully valid
-				rSes.dTargetRMSE = v.at(0);
-				rSes.dMAX = v.at(1);
-				rSes.lSampleQtyReq = (int)v.at(2);
-				rSes.iBpropThreads = (int)v.at(3) * 32; // Warp factor 1, Mr Sulu!
-				// perform learning
-				char cVenue;
-				if(rSes.iBpropThreads) //printf("AUTOMATED DEVICE LEARNING HERE\n");
-					cVenue='D';
-				else
-					cVenue='H';
-				rSes.lSamplesTrainable=Team->LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, rSes.iEpochLength, cVenue);
-				cuPreSaveNNWeights(rSes, cVenue);
-				printf("Training terminates with %2.2f RMSE achieved towards %2.2f %c target RMSE\n", rSes.dRMSE, rSes.dTargetRMSE, cVenue);
-			}
-			else{ // missing or extra parameters
-				if(v.size()<4){
-
-				}
-				else {
-				}
-			}
+			DoLearnOpt(rSes);
         }
 
         if (Barge->vm.count("eval")) {
-			vector<int> v;
-            cout << "eval " << Barge->vm["eval"].as<string>() << "\n";
-			Barge->OptionToIntVector("eval", v);
-			rSes.iSaveSampleIndex = v.at(0);
-			rSes.iSaveInputs = v.at(1);
-			rSes.iSaveOutputs = v.at(2);
-			rSes.lSampleQtyReq = v.at(3);
-			Team->GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'D');
-			//Team->LetSlack(rSes); // make sure device outputs are transferred back to host
-			printf("%s: first %d samples requested\nRMSE= %f\n", rSes.sWeightSet, rSes.lSampleQtyReq, rSes.dDevRMSE);		
-			// write evaluation report
-			char sLog[255], sFileAscii[255];
-			sprintf(sFileAscii,"%s%d%s",rSes.sSesName, (int)(rSes.dRMSE*100), "Evals.txt"); // do not exceed 254 char file name
-			int lReturn=Barge->LetWriteEvals(rSes, *rSes.rLearn);
-			// Log event
-			sprintf(sLog, "%d evals writen to %s", lReturn, sFileAscii ); // document success and filename
-			printf("%s\n", sLog);
-			Barge->RLog(rSes, sLog);
-			// include report for GUI
-			sprintf(sLog, "report=%s\n", sFileAscii);
-			Barge->HanReport(rSes, sLog);
+			DoEvalOpt(rSes);
         }
 	}
 	return iReturn;
+}
+
+void cDrover::DoLearnOpt(struct rohanContext& rSes)
+{mIDfunc
+	char sLog[255];
+	vector<double> v;
+	
+	if(Barge->VectorFromOption("learn", v, 4) ){ // all params present, hopefully valid
+		rSes.dTargetRMSE = v.at(0);
+		rSes.dMAX = v.at(1);
+		rSes.lSampleQtyReq = (int)v.at(2);
+		rSes.iBpropThreads = (int)v.at(3) * 32; // Warp factor 1, Mr Sulu!
+		// perform learning
+		char cVenue;
+		if(rSes.iBpropThreads) //printf("AUTOMATED DEVICE LEARNING HERE\n");
+			cVenue='D';
+		else
+			cVenue='H';
+		rSes.lSamplesTrainable=Team->LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, rSes.iEpochLength, cVenue);
+		Barge->cuPreSaveNNWeights(rSes, cVenue);
+		sprintf(sLog, "Learning terminates with %2.2f RMSE achieved towards %2.2f %c target RMSE", rSes.dRMSE, rSes.dTargetRMSE, cVenue);
+		Barge->RLog(rSes, USERF, sLog);
+		Barge->RLog(rSes, GUIF, "learn=pass");
+		sprintf(sLog, "RMSE=%f", rSes.dRMSE);
+		Barge->RLog(rSes, GUIF, sLog);
+	}
+	else{ // missing or extra parameters
+		Barge->RLog(rSes, GUIF, "learn=fail");
+		sprintf(sLog, "bad learn spec: %s", Barge->vm["learn"].as<string>().c_str());
+		Barge->RLog(rSes, WARNINGF, sLog);
+	}
+}
+
+
+void cDrover::DoEvalOpt(struct rohanContext& rSes)
+{mIDfunc
+	char sLog[255];
+	vector<int> v;
+
+	if(Barge->VectorFromOption("eval", v, 4) ) {
+		rSes.iSaveSampleIndex = v.at(0);
+		rSes.iSaveInputs = v.at(1);
+		rSes.iSaveOutputs = v.at(2);
+		rSes.lSampleQtyReq = v.at(3);
+		Team->GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'D');
+		//Team->LetSlack(rSes); // make sure device outputs are transferred back to host
+		printf("%s: first %d samples requested\nRMSE= %f\n", rSes.sWeightSet, rSes.lSampleQtyReq, rSes.dDevRMSE);		
+		// write evaluation report
+		char sLog[255], sFileAscii[255];
+		sprintf(sFileAscii,"%s%d%s",rSes.sSesName, (int)(rSes.dRMSE*100), "Evals.txt"); // do not exceed 254 char file name
+		int lReturn=Barge->LetWriteEvals(rSes, *rSes.rLearn);
+		// Log event
+		sprintf(sLog, "%d evals writen to %s", lReturn, sFileAscii ); // document success and filename
+		printf("%s\n", sLog);
+		Barge->RLog(rSes, USERF, sLog);
+		Barge->RLog(rSes, GUIF, "eval=pass");
+		// include report for GUI
+		sprintf(sLog, "report=%s", sFileAscii ); // document success and filename
+		Barge->RLog(rSes, GUIF, sLog);
+	}
+	else{
+		Barge->RLog(rSes, GUIF, "eval=fail");
+		sprintf(sLog, "bad eval spec: %s", Barge->vm["eval"].as<string>().c_str());
+		Barge->RLog(rSes, WARNINGF, sLog);
+	}
 }
 
 
@@ -271,7 +289,7 @@ int cDrover::DisplayMenu(int iMenuNum, struct rohanContext& rSes)
 		printf("\n8 - Randomize weights");
 		printf("\n9 - Utilities");
 		printf("\n0 - Quit");
-		CLIbase(rSes);
+		MenuBase(rSes);
 	}
 	if(iMenuNum==50){
 		printf("\n1 - Include inputs: %d", rSes.iSaveInputs);
@@ -284,7 +302,7 @@ int cDrover::DisplayMenu(int iMenuNum, struct rohanContext& rSes)
 		printf("\n8 - change Threads per block: %d", rSes.iEvalThreads);
 		printf("\n9 - Save evals");
 		printf("\n0 - Quit");
-		CLIbase(rSes);
+		MenuBase(rSes);
 	}
 	if(iMenuNum==60){
 		printf("\n1 - change Target RMSE: % #3.3g", rSes.dTargetRMSE);
@@ -297,7 +315,7 @@ int cDrover::DisplayMenu(int iMenuNum, struct rohanContext& rSes)
 		printf("\n8 - change Threads per block: %d", rSes.iBpropThreads);
 		printf("\n9 X ");
 		printf("\n0 - Quit");
-		CLIbase(rSes);
+		MenuBase(rSes);
 	}
 	if(iMenuNum==90){
 		printf("\n1 - convert .txt list of weights to .wgt");
@@ -310,7 +328,7 @@ int cDrover::DisplayMenu(int iMenuNum, struct rohanContext& rSes)
 		printf("\n8 - change Blocks per kernel: %d", rSes.iBpropBlocks);
 		printf("\n9 - change Threads per block: %d", rSes.iBpropThreads);
 		printf("\n0 - Quit");
-		CLIbase(rSes);
+		MenuBase(rSes);
 	}
 	printf("\n");
 	// http://www.cplusplus.com/doc/ascii/
@@ -320,7 +338,7 @@ int cDrover::DisplayMenu(int iMenuNum, struct rohanContext& rSes)
 }
 
 
-int cDrover::CLIbase(struct rohanContext& rSes)
+int cDrover::MenuBase(struct rohanContext& rSes)
 {mIDfunc /// displays the base information common to each/most menus
 		printf("\n %s %d samples MAX %f, %d trainable", rSes.sLearnSet, rSes.rLearn->lSampleQty, rSes.dMAX, 
 			TrainNNThresh(rSes, false));
@@ -332,7 +350,7 @@ int cDrover::CLIbase(struct rohanContext& rSes)
 	return 1;
 }
 
-int BeginSession(struct rohanContext& rSes)
+int cDrover::AskSessionName(struct rohanContext& rSes)
 {mIDfunc /// accepts keyboard input to define the name of the session, which will be used to name certain output files.
 	cout << "\nEnter a session name: ";
 	cin >> rSes.sSesName; 
@@ -359,9 +377,9 @@ int cDrover::GetNNTop(struct rohanContext& rSes)
 		rSes.rLearn->iInputQty=iInputQty; // upsdate input qty
 		cout << "Enter numbers of neurons per layer separated by commas, \ne.g. 63,18,1 : ";
 		cin >> sNeuronsPerLayer;
-		cuMakeLayers(iInputQty, sNeuronsPerLayer, rSes); // make new layers
+		Barge->cuMakeLayers(iInputQty, sNeuronsPerLayer, rSes); // make new layers
 		rSes.rNet->dK_DIV_TWO_PI = rSes.rNet->iSectorQty / TWO_PI; // Prevents redundant conversion operations
-		cuMakeNNStructures(rSes); // allocates memory and populates network structural arrays
+		Barge->cuMakeNNStructures(rSes); // allocates memory and populates network structural arrays
 		cuRandomizeWeightsBlock(rSes); // populate newtork with random weight values
 		printf("Random weights loaded.\n");
 		printf("%d-valued logic sector table made.\n", cuSectorTableMake(rSes));
@@ -371,72 +389,6 @@ int cDrover::GetNNTop(struct rohanContext& rSes)
 	else
 		return 999;
 }
-
-int cuMakeNNStructures(struct rohanContext &rSes)
-{mIDfunc
-/*! Initializes a neural network structure of the given number of layers and
- *  layer populations, allocates memory, and populates the set of weight values randomly.
- *
- * iLayerQTY = 3 means Layer 1 and Layer 2 are "full" neurons, with output-only neurons on layer 0.
- * 0th neuron on each layer is a stub with no inputs and output is alawys 1+0i, to accomodate internal weights of next layer.
- * This allows values to be efficiently calculated by referring to all layers and neurons identically.
- * 
- * rLayer[1].iNeuronQty is # of neurons in Layer 1, not including 0
- * rLayer[2].iNeuronQty is # of neurons in Layer 2, not including 0
- * rLayer[0].iNeuronQty is # of inputs in Layer 0 
- * iNeuronQTY[1] is # of neurons in Layer 1, including 0
- * iNeuronQTY[2] is # of neurons in Layer 2, including 0 */
-
-	int lReturn=0;
-//const cuDoubleComplex cdcZero = { 0, 0 }, 
-	const cuDoubleComplex cdcInit = { -999.0, 999.0 };
-	//cdcInit.x=-999.0; cdcInit.y=999.0;
-	for (int i=0; i < rSes.rNet->iLayerQTY; ++i){  //Layer Zero has no need of weights! 8/13/2010
-		struct rohanLayer& lay = rSes.rNet->rLayer[i];
-		struct rohanNetwork * rnSrc = rSes.rNet;
-		int DQTY, NQTY, WQTY, DSIZE, NSIZE, WSIZE, L=i;
-		//setup dimension values
-		DQTY = rnSrc->rLayer[L].iDendriteQty + 1 ; // dendrites = incoming signals
-		DSIZE = DQTY * sizeof(cuDoubleComplex) ;
-		NQTY = rnSrc->rLayer[L].iNeuronQty + 1 ; // neurons = outgoing signals
-		NSIZE = NQTY * sizeof(cuDoubleComplex) ;
-		WQTY = DQTY * NQTY ; // weights = neurons * dendrites
-		WSIZE = WQTY * sizeof(cuDoubleComplex) ;
-		
-		//allocate memory
-		lay.Weights = (cuDoubleComplex*)malloc ( WSIZE ); // 2D array of complex weights
-			mCheckMallocWorked(lay.Weights)
-		lay.XInputs = (cuDoubleComplex*)malloc( DSIZE ); //allocate a pointer to an array of outputs
-			mCheckMallocWorked(lay.XInputs)
-		lay.ZOutputs = (cuDoubleComplex*)malloc( NSIZE ); //allocate a pointer to an array of outputs
-			mCheckMallocWorked(lay.ZOutputs)
-		lay.Deltas = (cuDoubleComplex*)malloc( NSIZE ); //allocate a pointer to a parallel array of learned corrections
-			mCheckMallocWorked(lay.Deltas)
-		lReturn+=lay.iNeuronQty*lay.iDendriteQty;
-   		lReturn+=lay.iNeuronQty;
-	
-		//init values
-		for (int i=0; i <= lay.iDendriteQty; ++i){
-			for (int k=0; k <= lay.iNeuronQty; ++k){ 
-				lay.Weights[IDX2C(i, k, lay.iDendriteQty+1)].x=(double)rand()/65535; // necessary to promote one operand to double to get a double result
-				lay.Weights[IDX2C(i, k, lay.iDendriteQty+1)].y=(double)rand()/65535;
-				//lay.Deltas[IDX2C(i, k, lay.iDendriteQty+1)]=cdcInit;
-			}
-			// reset neuron 0 weights to null
-			lay.Weights[IDX2C(i, 0, lay.iDendriteQty+1)] = cdcZero;
-			// mark inputs as yet-unused
-			lay.XInputs[i]=cdcInit;
-		}
-		lay.Weights[IDX2C(0, 0, lay.iDendriteQty+1)].x=1.0; // neuron 0, dendrite 0 interior weight should always be equal to 1+0i
-		for (int k=0; k <= lay.iNeuronQty; ++k){
-			// mark outputs and deltas as yet-unused
-			lay.ZOutputs[k]=cdcInit;
-			lay.Deltas[k]=cdcInit;
-		}
-	}
-	return lReturn; //return how many weights and outputs allocated
-}
-
 
 int cDrover::GetWeightSet(struct rohanContext& rSes)
 {mIDfunc /// chooses and loads the weight set to be worked with
@@ -450,12 +402,12 @@ int cDrover::GetWeightSet(struct rohanContext& rSes)
 	strcat(sWeightSet, ".wgt");
 
 	// File handle for input
-	iReturn=BinaryFileHandleRead(sWeightSet, &fileInput);
+	iReturn=Barge->BinaryFileHandleRead(sWeightSet, &fileInput);
 	if (iReturn==0) // unable to open file
 		++rSes.iErrors;
 	else{ // file opened normally
 		// file opening and reading are separated to allow for streams to be added later
-		iReturn=cuNNLoadWeights(rSes, fileInput); // reads weights into layered structures
+		iReturn=Barge->cuNNLoadWeights(rSes, fileInput); // reads weights into layered structures
 		if (iReturn) {
 			printf("%d weights read.\n", iReturn);
 			Barge->LayersToBlocks(rSes); //, *rSes.rNet);
@@ -475,9 +427,6 @@ int cDrover::LetInteractiveEvaluation(struct rohanContext& rSes)
 	int iReturn=0, iSelect=1;
 	
 	while(iSelect){
-		//Team->LetSlack(rSes);
-		//Team->LetEvalSet(rSes, rSes.lSampleQtyReq, 'H');
-		//rSes.dRMSE = RmseNN(rSes, rSes.lSampleQtyReq);
 		iSelect=DisplayMenu(50, rSes);
 		if (iSelect==1) {rSes.iSaveInputs=(rSes.iSaveInputs ? false: true); }
 		if (iSelect==2) {rSes.iSaveOutputs=(rSes.iSaveOutputs ? false: true); }
@@ -513,9 +462,6 @@ int cDrover::LetInteractiveLearning(struct rohanContext& rSes)
 	int iReturn=0, iSelect=1;
 	
 	while(iSelect){
-		//Team->LetSlack(rSes);
-		//Team->LetEvalSet(rSes, rSes.lSampleQtyReq, 'H');
-		//rSes.dRMSE = RmseNN(rSes, rSes.lSampleQtyReq);
 		iSelect=DisplayMenu(60, rSes);
 		if (iSelect==1) {printf("Enter desired RMSE for learning\n");std::cin >> rSes.dTargetRMSE;}
 		if (iSelect==2) {printf("Enter MAX allowable error per sample\n");std::cin >> rSes.dMAX;}
@@ -555,8 +501,8 @@ int cDrover::LetUtilities(struct rohanContext& rSes)
 			cout << "Enter name of .txt file to convert to .wgt:" << endl;
 			cin >> bfname;
 			strcat(afname, bfname); strcat(afname, ".txt"); strcat(bfname, ".wgt");
-			AsciiFileHandleRead( afname, &ASCIN );
-			BinaryFileHandleWrite( bfname, &BINOUT );
+			Barge->AsciiFileHandleRead( afname, &ASCIN );
+			Barge->BinaryFileHandleWrite( bfname, &BINOUT );
 			#define MAX_REC_LEN 65536 /* Maximum size of input buffer */
 			while(fgets(lineIn, MAX_REC_LEN, ASCIN)) { //each line is read in turn
 				cSample = _strdup(lineIn);
@@ -585,12 +531,16 @@ int cDrover::LetUtilities(struct rohanContext& rSes)
 int cDrover::DoPostLoop(struct rohanContext& rSes) 
 {mIDfunc /// Final operations including freeing of dynamically allocated memory are called from here. 
 	int iReturn=0, iSelect=0;
+	char sLog[255];
 
+	sprintf(sLog, "Simulation terminated after %d warning(s), %d operational error(s).\n", rSes.iWarnings, rSes.iErrors);
+	Barge->RLog(rSes, USERF, sLog);
+	Barge->RLog(rSes, GUIF, "end=end");
 	DoEndItAll(rSes);
-	printf("Simulation terminated after %d warning(s), %d operational error(s).\n", rSes.iWarnings, rSes.iErrors);
+	
 #ifdef _DEBUG
 	printf("Waiting on keystroke...\n");
-	_getch();
+	mExitKeystroke
 #endif
 	// call to source tracking here? 6/23/12
 

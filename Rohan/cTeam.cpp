@@ -13,9 +13,9 @@ typedef unsigned __int64 uint64;
 extern int gDebugLvl, gDevDebug, gTrace;
 extern int bCUDAavailable;
 
-//////////////// class cDeviceTeam begins ////////////////
+//////////////// class cTeam begins ////////////////
 
-cDeviceTeam::cDeviceTeam( struct rohanContext& rSes)//, struct rohanNetwork& rNet, rohanLearningSet& rLearn)
+cTeam::cTeam( struct rohanContext& rSes)//, struct rohanNetwork& rNet, rohanLearningSet& rLearn)
 {mIDfunc
 	SetContext(rSes); // attach to host-side data structures
 	SetNetwork(*rSes.rNet);
@@ -23,62 +23,62 @@ cDeviceTeam::cDeviceTeam( struct rohanContext& rSes)//, struct rohanNetwork& rNe
 
 	// informally acknowledge class
 	//ShowMe();
-	//const char* const classname = "cDeviceTeam";
+	//const char* const classname = "cTeam";
 	
 	bHitched=FALSE;
 	bTaut=FALSE;
 	// end ctor
 }
 
-char cDeviceTeam::GetHitched()
+char cTeam::GetHitched()
 {	
 	return bHitched;
 }
 
-char cDeviceTeam::GetTaut()
+char cTeam::GetTaut()
 {	
 	return bTaut;
 }
 
 
-int cDeviceTeam::SetContext( rohanContext& rC)
+int cTeam::SetContext( rohanContext& rC)
 {mIDfunc/// enables pointer access to master context struct
 	rSes = &rC;
 	return 0;
 }
 
-int cDeviceTeam::SetNetwork( rohanNetwork& rN)
+int cTeam::SetNetwork( rohanNetwork& rN)
 {mIDfunc/// enables pointer access to weight sets and layer sizes, etc
 	rNet = &rN;
 	return 0;
 }
 
-int cDeviceTeam::SetSamples( rohanLearningSet& rL)
+int cTeam::SetSamples( rohanLearningSet& rL)
 {mIDfunc/// enables pointer access to master sample struct
 	rLearn = &rL;
 	return 0;
 }
 
-int cDeviceTeam::SetBarge( class cBarge * cbBarge)
+int cTeam::SetBarge( class cBarge * cbBarge)
 {mIDfunc/// enables pointer access to active Barge object
 	Barge = cbBarge;
 	return 0;
 }
 
-int cDeviceTeam::SetDrover( class cDrover * cdDrover)
+int cTeam::SetDrover( class cDrover * cdDrover)
 {mIDfunc/// enables pointer access to active Drover object
 	Drover = cdDrover;
 	return 0;
 }
 
 
-void cDeviceTeam::ShowMe()
+void cTeam::ShowMe()
 {mIDfunc
 	//ShowMeSes(* rSes, false);
 	printf("I'm a mighty stallion!\n");
 }
 
-int cDeviceTeam::LetEvalSet( rohanContext& rSes, char chMethod)
+int cTeam::LetEvalSet( rohanContext& rSes, char chMethod)
 {mIDfunc/// Submits a subset of the samples available forevaluation, returns samples submitted.
 	// choose host submission loop or device
 	if(chMethod=='H' || chMethod=='h'){
@@ -97,7 +97,7 @@ int cDeviceTeam::LetEvalSet( rohanContext& rSes, char chMethod)
 	return rSes.lSampleQtyReq;
 }
 
-int cDeviceTeam::LetTrainNNThresh( rohanContext& rSes, int o, char chMethod, double dTargetRMSE, int iEpochLength, char Venue)
+int cTeam::LetTrainNNThresh( rohanContext& rSes, int o, char chMethod, double dTargetRMSE, int iEpochLength, char Venue)
 {mIDfunc/// Submits samples available for backprop learning.
 /// o indictaes which output(s)
 //
@@ -110,7 +110,7 @@ int cDeviceTeam::LetTrainNNThresh( rohanContext& rSes, int o, char chMethod, dou
 	char sLog[255];
 
 	sprintf(sLog, "Learn input %d, method %c, target %f, epoch %d, venue %c: BEGIN", o, chMethod, dTargetRMSE, iEpochLength, Venue);
-	Barge->RLog(rSes, sLog);
+	Barge->RLog(rSes, 0, sLog);
 
 	if(Venue=='D' || Venue=='d'){
 		bool bInternalTaut=false;
@@ -157,19 +157,19 @@ int cDeviceTeam::LetTrainNNThresh( rohanContext& rSes, int o, char chMethod, dou
 				
 	}
 	sprintf(sLog, "Learn input %d, method %c, target %f, epoch %d, venue %c: RMSE= %f END", o, chMethod, dTargetRMSE, iEpochLength, Venue, RMSE);
-	Barge->RLog(rSes, sLog);
+	Barge->RLog(rSes, 0, sLog);
 
 	return lReturn;
 }
 
-int cDeviceTeam::LetBackpropSingleSample( rohanContext& rSes, int lSampleIdxReq, int o, char chMethod)
+int cTeam::LetBackpropSingleSample( rohanContext& rSes, int lSampleIdxReq, int o, char chMethod)
 {mIDfunc
 	int lReturn=knlBackProp( rSes, o, 'S', rSes.iBpropBlocks, rSes.iBpropThreads); // S indicates single bprop operation
 
 	return lReturn;
 }
 
-double cDeviceTeam::GetRmseNN(struct rohanContext& rSes, int o, char Option, char Venue)
+double cTeam::GetRmseNN(struct rohanContext& rSes, int o, char Option, char Venue)
 {mIDfunc/*! checks sampled outputs vs evaluated outputs and calculates root mean squared error. */
 	// o controls which output is used (zero for all)
 	// Option will determine if existing data is used (E, not fully implemented) or refreshed (R) XX 6/23/12
@@ -198,14 +198,14 @@ double cDeviceTeam::GetRmseNN(struct rohanContext& rSes, int o, char Option, cha
 	return dAnswer;
 }
 
-int cDeviceTeam::LetHitch(struct rohanContext& rSes)    
+int cTeam::LetHitch(struct rohanContext& rSes)    
 {mIDfunc/*! \callgraph \callergraph copy data to device memory space and attach structures to Team */
-if (bHitched){
-		printf("cDeviceTeam already hitched.\n");
+	if (bHitched){
+		Barge->RLog(rSes, WARNINGF, "cTeam already hitched.");
 		return FALSE;
 	}
 	else{
-		//printf("cDeviceTeam begin hitch process.\n");
+		//printf("cTeam begin hitch process.\n");
 
 		// BEGIN context data structure members
  		TransferContext(rSes, 'D');
@@ -217,14 +217,14 @@ if (bHitched){
 		CopyLearnSet(rSes, 'D');
 		
 		/// end members and structures
-		if(rSes.bConsoleUsed)printf("H+T-->\n");
+		Barge->RLog(rSes, 0, "H+T-->");
 		bHitched=TRUE; bTaut=TRUE;
 		return TRUE;
 	}
 }
 
 
-int cDeviceTeam::TransferContext(struct rohanContext& rSes, char Direction)
+int cTeam::TransferContext(struct rohanContext& rSes, char Direction)
 {mIDfunc/*! copy rSes and members to dev mem */
 	
 	int SIZE = sizeof(rSes);
@@ -241,14 +241,12 @@ int cDeviceTeam::TransferContext(struct rohanContext& rSes, char Direction)
 			mCheckCudaWorked
 	}
 	if(crc32buf( (char*)&rSes, SIZE )!=knlCRC32Buf( (char*)rSes.devSes, SIZE ))
-		printf("FAILURE copying context\n");
-	//else
-	//	printf("%c context faithfully copied\n", Direction);
+		Barge->RLog(rSes, ERRORF, "FAILURE copying context");
 	
 	return 0;
 }
 
-int cDeviceTeam::CopyNet(struct rohanContext& rSes, char Direction)
+int cTeam::CopyNet(struct rohanContext& rSes, char Direction)
 {mIDfunc/*! copy NN arch and layer structures, their contents, and member values to dev memory */
 // layer structures removed 3/31/12 JAW
 	cudaMemcpyKind kind; //cuDoubleComplex * dummy;
@@ -277,17 +275,15 @@ int cDeviceTeam::CopyNet(struct rohanContext& rSes, char Direction)
 	cudaMemcpy( rnSrc->gpuSectorBdry, rnSrc->cdcSectorBdry, SECSIZE , kind );
 		mCheckCudaWorked
 	if(crc32buf( (char*)rnSrc->cdcSectorBdry, SECSIZE )!=knlCRC32Buf( (char*)rnSrc->gpuSectorBdry, SECSIZE ))
-		printf("FAILURE copying sector table\n");
-	//else
-	//	printf("sector table faithfully copied\n");
-
+		Barge->RLog(rSes, ERRORF, "FAILURE copying sector table");
+	
 	TransferNet(rSes, 'D');
 
 	return 0;
 }
 
 
-int cDeviceTeam::TransferNet(struct rohanContext& rSes, char Direction)
+int cTeam::TransferNet(struct rohanContext& rSes, char Direction)
 {mIDfunc/*! copy rNet params to dev mem */
 	int SIZE = sizeof(rohanNetwork);
 	//printf("=> Transfer Net %c =>\n", Direction);
@@ -301,15 +297,13 @@ int cDeviceTeam::TransferNet(struct rohanContext& rSes, char Direction)
 			mCheckCudaWorked
 	}
 	if(crc32buf( (char*)rSes.rNet, SIZE )!=knlCRC32Buf( (char*)rSes.devNet, SIZE ))
-			printf("FAILURE copying Net params\n");
-	//else
-	//	printf("%c net params faithfully copied\n", Direction);
-
+			Barge->RLog(rSes, ERRORF, "FAILURE copying Net params");
+	
 	return 0;
 }
 
 
-int cDeviceTeam::CopyLearnSet(struct rohanContext& rSes, char Direction)
+int cTeam::CopyLearnSet(struct rohanContext& rSes, char Direction)
 {mIDfunc/*! copies learning set structures, contents, andvmember values to device memory space */
 	cudaMemcpyKind kind; //cuDoubleComplex * dummy;
 	struct rohanLearningSet * rlSrc;
@@ -375,7 +369,8 @@ int cDeviceTeam::CopyLearnSet(struct rohanContext& rSes, char Direction)
 			mCheckCudaWorked
 		cudaMemcpy( rlSrc->gpuAltYEval, rlSrc->cdcAltYEval, OUTSIZECX, kind); 
 			mCheckCudaWorked
-		
+
+#ifdef _DEBUG		
 		if(0){ // checksums to verify faithful transfer
 			printf("%08lX %7ld %s\n", crc32buf( (char*)rlSrc->dXInputs, INSIZED ), INSIZED, "dXInputs");
 			printf("%08lX %7ld %s\n", knlCRC32Buf( (char*)rlSrc->gpudXInputs, INSIZED ), INSIZED, "gpudXInputs");
@@ -388,6 +383,7 @@ int cDeviceTeam::CopyLearnSet(struct rohanContext& rSes, char Direction)
 			printf("%08lX %7ld %s\n", crc32buf( (char*)rlSrc->dSqrErr, OUTSIZED ), OUTSIZED, "dSqrErr"); // made OUTSIZED by JAW 1/8/12
 			printf("%08lX %7ld %s\n", knlCRC32Buf( (char*)rlSrc->gpudSqrErr, OUTSIZED ), OUTSIZED, "gpudSE102");
 		}
+#endif
 		// store array dimensions
 		rSes.rLearn->IQTY=IQTY;
 		rSes.rLearn->OQTY=OQTY;
@@ -412,14 +408,12 @@ int cDeviceTeam::CopyLearnSet(struct rohanContext& rSes, char Direction)
 		kind=cudaMemcpyDeviceToHost;
 	}
 	if(crc32buf( (char*)rlSrc, SIZE )!=knlCRC32Buf( (char*)rSes.devLearn, SIZE ))
-		printf("FAILURE copying samples\n");
-	//else
-	//	printf("samples faithfully copied\n");
-
+		Barge->RLog(rSes, ERRORF, "FAILURE copying samples");
+	
 	return 0;
 }
 
-int cDeviceTeam::LetUnHitch(struct rohanContext& rSes)
+int cTeam::LetUnHitch(struct rohanContext& rSes)
 {mIDfunc/*! \callgraph \callergraph free device memory structures to Team */
 	if(bHitched){ // check for hitched state
 		if(bTaut) // check for taut/slack state
@@ -429,7 +423,7 @@ int cDeviceTeam::LetUnHitch(struct rohanContext& rSes)
 
 		cudaFree( rnSrc->gpuSectorBdry);
 			mCheckCudaWorked
-		printf("cdt: Net Arch clear\n");	
+		Barge->RLog(rSes, 0, "cdt: Net Arch clear");	
 
 		//BEGIN freeing rdLearn structures
 		struct rohanLearningSet * rlSrc = rSes.rLearn;
@@ -451,42 +445,42 @@ int cDeviceTeam::LetUnHitch(struct rohanContext& rSes)
 				mCheckCudaWorked
 			cudaFree( rlSrc->gpuAltYEval);
 				mCheckCudaWorked
-		printf("cdt: LearnSet clear\n");
+		Barge->RLog(rSes, 0, "cdt: LearnSet clear");
 
 		/// end members and structures
-		printf("cDeviceTeam unhitched.\n");
+		Barge->RLog(rSes, 0, "cTeam unhitched.");
 		bHitched=FALSE;
 		return TRUE;
 	}
 	else{
-		printf("cDeviceTeam is already unhitched.\n");
+		Barge->RLog(rSes, WARNINGF, "cTeam is already unhitched!");
 		return FALSE;
 	}
 }
 
 
-int cDeviceTeam::LetTaut(struct rohanContext& rSes)
+int cTeam::LetTaut(struct rohanContext& rSes)
 {mIDfunc/*! \callgraph \callergraph update dev mem from host for epoch */;
 	if(bHitched && bTaut==FALSE){ // check taut state first
 		TransferContext(rSes, 'D');
 		//TransferLayers(rSes, 'D');
 		TransferNet(rSes, 'D');
 		TransferOutputs(rSes, 'D');
-		if(rSes.bConsoleUsed)printf("T-->\n");
+		Barge->RLog(rSes, 0, "T-->");
 		bTaut=TRUE;
 	}
 	else{
 		if(bTaut)
-			printf("cDeviceTeam already taut!\n");
+			Barge->RLog(rSes, WARNINGF, "cTeam already taut!");
 		if(bHitched==FALSE)
-			printf("cDeviceTeam is not hitched!\n");
+			Barge->RLog(rSes, WARNINGF, "cTeam is not hitched!");
 	}
 	
 	return 0;
 }
 
 
-int cDeviceTeam::TransferLayers(struct rohanContext& rSes, char Direction)
+int cTeam::TransferLayers(struct rohanContext& rSes, char Direction)
 {mIDfunc/*! \callgraph \callergraph copy rNet layer data to dev mem */
 	cudaMemcpyKind kind; //cuDoubleComplex * dummy;
 	struct rohanNetwork * rnSrc, * rnDest ;
@@ -565,27 +559,27 @@ int cDeviceTeam::TransferLayers(struct rohanContext& rSes, char Direction)
 }
 
 
-int cDeviceTeam::LetSlack(struct rohanContext& rSes)
+int cTeam::LetSlack(struct rohanContext& rSes)
 {mIDfunc/*! \callgraph \callergraph update dev mem from host for epoch */;
 	if(bHitched && bTaut){ // check taut state first
 		//TransferContext(rSes, 'H');
 		//TransferLayers(rSes, 'H');
 		TransferNet(rSes, 'H');
 		TransferOutputs(rSes, 'H');
-		if(rSes.bConsoleUsed)printf("<--S\n");
+		Barge->RLog(rSes, 0, "<--S");
 		bTaut=FALSE;
 	}
 	else{
 		if(bTaut==FALSE)
-			printf("cDeviceTeam already slack!\n");
+			Barge->RLog(rSes, WARNINGF, "cTeam already slack!");
 		if(bHitched==FALSE)
-			printf("cDeviceTeam is not hitched!\n");
+			Barge->RLog(rSes, WARNINGF, "cTeam is not hitched!");
 	}
 	return 0;
 }
 
 
-int cDeviceTeam::TransferOutputs(struct rohanContext& rSes, char Direction)
+int cTeam::TransferOutputs(struct rohanContext& rSes, char Direction)
 {mIDfunc/*! transfers contents of yielded output data strctures between memory spaces, usually dev to host */
 	cudaMemcpyKind kind; //cuDoubleComplex * dummy;
 	struct rohanLearningSet * rlSrc;
@@ -631,7 +625,7 @@ int cDeviceTeam::TransferOutputs(struct rohanContext& rSes, char Direction)
 	return 0;
 }
 
-int cDeviceTeam::GetEvalSingleSample( struct rohanContext& rSes, int lSampleIdxReq, char chMethod)
+int cTeam::GetEvalSingleSample( struct rohanContext& rSes, int lSampleIdxReq, char chMethod)
 {mIDfunc/*! calculates NN outputs for a given sample with GPU method */
 	if(chMethod=='c')
 		return cuEvalSingleSampleBeta(rSes, lSampleIdxReq, *rSes.rNet, 0, rSes.rNet->Signals, rSes.rNet->Zs, rSes.rNet->Wt, rSes.rLearn->cdcXInputs, rSes.rLearn->cdcYEval, rSes.rLearn->dYEval);
@@ -640,7 +634,7 @@ int cDeviceTeam::GetEvalSingleSample( struct rohanContext& rSes, int lSampleIdxR
 }
 
 
-double cDeviceTeam::RmseEvaluateTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iSampleQty)
+double cTeam::RmseEvaluateTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iSampleQty)
 {mIDfunc /// runs tests for RMSE and evaluation on both host and GPU
 	int iDifferent=0, iOldSampleQtyReq=rSes.lSampleQtyReq; double dDifferent=0.0; float fDevTime=0.0;
 
@@ -651,7 +645,7 @@ double cDeviceTeam::RmseEvaluateTest(struct rohanContext& rSes, struct rohanNetw
 	boost::timer::cpu_timer tHost, tDev;
 	boost::timer::cpu_times elapHost, elapDev;
 		// perform a warm-up host eval to eliminate the always-longer first one, return true number of samples, prepare timer to resume @ 0.0;
-		printf("WARMUP:\n");
+		//Barge->RLog(rSes, 0, "WARMUP");
 			GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'H');
 		tHost.start();
 		tHost.stop();
@@ -661,8 +655,8 @@ double cDeviceTeam::RmseEvaluateTest(struct rohanContext& rSes, struct rohanNetw
 		tDev.start();
 		tDev.stop();
 		char sLog0[80]; sprintf(sLog0, "BEGIN RMSE/EVALUATE TEST: %d TRIALS, %d SAMPLES", iTrials, rSes.lSampleQtyReq);
-		printf("\n\n%s\n\n", sLog0); Barge->RLog( rSes, sLog0);
-		printf("-------------------------------\n");
+		Barge->RLog( rSes, 0, sLog0);
+		//printf("-------------------------------\n");
 	
 	for(int i=1; i<=iTrials; ++i){
 		//reset values
@@ -680,7 +674,7 @@ double cDeviceTeam::RmseEvaluateTest(struct rohanContext& rSes, struct rohanNetw
 		//begin host eval test
 		//printf("HST:");
 		{
-			boost::timer::auto_cpu_timer o;
+			//boost::timer::auto_cpu_timer o;
 			tHost.resume();
 			cuEvalNNLearnSet(rSes);
 			RmseNN(rSes, 0); // update dHostRMSE
@@ -689,10 +683,10 @@ double cDeviceTeam::RmseEvaluateTest(struct rohanContext& rSes, struct rohanNetw
 		// end host eval test
 
 		iDifferent += OutputValidate(rSes);
-		printf("BOTH: %d differences found on verify.\n", iDifferent);
+		//printf("BOTH: %d differences found on verify.\n", iDifferent);
 		dDifferent += rSes.dDevRMSE - rSes.dHostRMSE;
-		printf("BOTH: delta RMSE %f += %f - %f\n", dDifferent, rSes.dDevRMSE, rSes.dHostRMSE);
-		printf("-------------------------------%d\n", i);
+		//printf("BOTH: delta RMSE %f += %f - %f\n", dDifferent, rSes.dDevRMSE, rSes.dHostRMSE);
+		//printf("-------------------------------%d\n", i);
 	}
 	elapHost=tHost.elapsed();
 	elapDev =tDev.elapsed();
@@ -704,19 +698,17 @@ double cDeviceTeam::RmseEvaluateTest(struct rohanContext& rSes, struct rohanNetw
 	char sLog1[80]; sprintf(sLog1, "Host/Serial mean performance over %d runs: %.1f ms", iTrials, dAvgTimeHost/10);
 	char sLog2[80]; sprintf(sLog2, "Dev/CUDA    mean performance over %d runs: %.1f ms", iTrials, fDevTime/iTrials);
 	char sLog3[14]; sprintf(sLog3, ( (iDifferent || abs(dDifferent)>.001 ) ? "EVALUATE FAIL" : "EVALUATE PASS" ) );
-	printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
-	//sprintf(sLog1, "%s %s", sLog3, sLog1); 
-Barge->RLog(rSes, sLog1);
-	//sprintf(sLog2, "%s %s", sLog3, sLog2); 
-Barge->RLog(rSes, sLog2);
-Barge->RLog(rSes, sLog3);
+	//printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
+	Barge->RLog(rSes, 0, sLog1);
+	Barge->RLog(rSes, 0, sLog2);
+	Barge->RLog(rSes, 0, sLog3);
 
 	rSes.lSampleQtyReq=iOldSampleQtyReq; // restore original sample set size just before exit
 	return iDifferent+dDifferent;
 }
 
 
-int cDeviceTeam::ClassifyTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iSampleQty)
+int cTeam::ClassifyTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iSampleQty)
 {mIDfunc /// runs classification tests on both host and GPU
 	int iDeviceTrainable, iHostTrainable, iMargin=0, iOldSampleQtyReq=rSes.lSampleQtyReq; float fDevTime=0.0;
 
@@ -727,7 +719,7 @@ int cDeviceTeam::ClassifyTest(struct rohanContext& rSes, struct rohanNetwork& rN
 	boost::timer::cpu_timer tHost, tDev;
 	boost::timer::cpu_times elapHost, elapDev;
 		// perform a warm-up host eval to eliminate the always-longer first one, return true number of samples, prepare timer to resume @ 0.0;
-		printf("WARMUP:\n");
+		//printf("WARMUP:\n");
 			cuEvalNNLearnSet(rSes);
 			RmseNN(rSes, 0); // update dHostRMSE
 		tHost.start();
@@ -738,8 +730,9 @@ int cDeviceTeam::ClassifyTest(struct rohanContext& rSes, struct rohanNetwork& rN
 		tDev.start();
 		tDev.stop();
 	char sLog0[80]; sprintf(sLog0, "BEGIN CLASSIFY TEST: %d TRIALS, %d SAMPLES", iTrials, rSes.lSampleQtyReq);
-	printf("\n\n%s\n\n", sLog0); Barge->RLog( rSes, sLog0);
-	printf("-------------------------------\n");
+	//printf("\n\n%s\n\n", sLog0); 
+	Barge->RLog( rSes, 0, sLog0);
+	//printf("-------------------------------\n");
 	for(int i=1; i<=iTrials; ++i){
 		// begin trainable sample test DEVICE
 		LetTaut(rSes);
@@ -750,16 +743,16 @@ int cDeviceTeam::ClassifyTest(struct rohanContext& rSes, struct rohanNetwork& rN
 			fDevTime+=gKernelTimeTally; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
 		tDev.stop();
 		LetSlack(rSes);
-		printf("HST:");
+		//printf("HST:");
 		{
-			boost::timer::auto_cpu_timer o;
+			//boost::timer::auto_cpu_timer o;
 			tHost.resume();
 				cuEvalNNLearnSet(rSes); // evaluation is now included separately in host classification tests
 				iMargin -= iHostTrainable=TrainNNThresh(rSes, false);
 			tHost.stop();
 		}
-		printf("BOTH: delta trainable %d += %d - %d\n", iMargin, iDeviceTrainable, iHostTrainable);
-		printf("-------------------------------%d\n", i);
+		//printf("BOTH: delta trainable %d += %d - %d\n", iMargin, iDeviceTrainable, iHostTrainable);
+		//printf("-------------------------------%d\n", i);
 		iDeviceTrainable=iHostTrainable=0;
 	}
 
@@ -774,19 +767,17 @@ int cDeviceTeam::ClassifyTest(struct rohanContext& rSes, struct rohanNetwork& rN
 	char sLog1[80]; sprintf(sLog1, "Host/Serial mean performance over %d runs: %.1f ms", iTrials, dAvgTimeHost/10);
 	char sLog2[80]; sprintf(sLog2, "Dev/CUDA    mean performance over %d runs: %.1f ms", iTrials, fDevTime/iTrials);
 	char sLog3[14]; sprintf(sLog3, ( iMargin ? "CLASSIFY FAIL" : "CLASSIFY PASS" ) );
-	printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
-	//sprintf(sLog1, "%s %s", sLog3, sLog1); 
-Barge->RLog(rSes, sLog1);
-	//sprintf(sLog2, "%s %s", sLog3, sLog2); 
-	Barge->RLog(rSes, sLog2);
-	Barge->RLog(rSes, sLog3);
+	//printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
+	Barge->RLog(rSes, 0, sLog1);
+	Barge->RLog(rSes, 0, sLog2);
+	Barge->RLog(rSes, 0, sLog3);
 	
 	rSes.lSampleQtyReq=iOldSampleQtyReq; // restore original sample set size just before exit
 	return (iMargin);
 }
 
 
-double cDeviceTeam::BackPropTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iThreads, int iSampleQty)
+double cTeam::BackPropTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iThreads, int iSampleQty)
 {mIDfunc /// runs tests for backward propagation on both host and GPU
 	double dDifferent=0.0; float fDevTime=0.0;
 	int iDeviceTrainable, iHostTrainable, iMargin=0, oldThreads=rSes.iBpropThreads, iOldSampleQtyReq=rSes.lSampleQtyReq; 
@@ -799,7 +790,7 @@ double cDeviceTeam::BackPropTest(struct rohanContext& rSes, struct rohanNetwork&
 	boost::timer::cpu_times elapHost;//, elapDev;
 	rSes.iBpropThreads=iThreads;
 		// perform a warm-up host eval to eliminate the always-longer first one, return true number of samples, prepare timer to resume @ 0.0;
-		printf("WARMUP:\n");
+		// printf("WARMUP:\n");
 			iSampleQty=cuEvalNNLearnSet(rSes);
 			RmseNN(rSes, 0); // update hostRMSE
 		tHost.start();
@@ -809,8 +800,9 @@ double cDeviceTeam::BackPropTest(struct rohanContext& rSes, struct rohanNetwork&
 			 
 
 	char sLog0[80]; sprintf(sLog0, "BEGIN BACKPROP TEST: %d TRIALS, %d THREADS %d SAMPLES", iTrials, iThreads, rSes.lSampleQtyReq);
-	printf("\n\n%s\n\n", sLog0); Barge->RLog( rSes, sLog0);
-	printf("-------------------------------\n");
+	//printf("\n\n%s\n\n", sLog0); 
+	Barge->RLog( rSes, 0, sLog0);
+	//printf("-------------------------------\n");
 	LetTaut(rSes);
 	for(int i=1; i<=iTrials; ++i){
 		// begin BACKPROPagation test DEVICE
@@ -826,7 +818,7 @@ double cDeviceTeam::BackPropTest(struct rohanContext& rSes, struct rohanNetwork&
 		// begin BACKPROPagation test HOST
 		//conPrintf("HST:");
 		{	
-			boost::timer::auto_cpu_timer o;
+			//boost::timer::auto_cpu_timer o;
 			tHost.resume();
 				cuEvalNNLearnSet(rSes); // evaluation is now included separately in host classification tests
 				iMargin -= iHostTrainable=TrainNNThresh( rSes, true); // YY change false to true
@@ -835,9 +827,9 @@ double cDeviceTeam::BackPropTest(struct rohanContext& rSes, struct rohanNetwork&
 			tHost.stop();
 		}
 		// end host test
-		printf("BOTH: delta RMSE %f += %f - %f", dDifferent, rSes.dDevRMSE, rSes.dHostRMSE);
+		//printf("BOTH: delta RMSE %f += %f - %f", dDifferent, rSes.dDevRMSE, rSes.dHostRMSE);
 		//printf("BOTH: delta trainable %d += %d - %d\n", iMargin, iDeviceTrainable, iHostTrainable);
-		printf("----------------------%d\n", i);
+		//printf("----------------------%d\n", i);
 		iDeviceTrainable=iHostTrainable=0;
 	}
 	LetSlack(rSes);
@@ -849,17 +841,17 @@ double cDeviceTeam::BackPropTest(struct rohanContext& rSes, struct rohanNetwork&
 	char sLog1[80]; sprintf(sLog1, "Host/Serial mean performance over %d runs: %.1f ms", iTrials, dAvgTimeHost/10); //converted from tenths of ms to full ms
 	char sLog2[80]; sprintf(sLog2, "Dev/CUDA    mean performance over %d runs: %.1f ms", iTrials, fDevTime/iTrials);
 	char sLog3[14]; sprintf(sLog3, ( (iMargin || abs(dDifferent)>.001 ) ? "BACKPROP FAIL" : "BACKPROP PASS" ) );
-	printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
-	Barge->RLog(rSes, sLog1);
-	Barge->RLog(rSes, sLog2);
-	Barge->RLog(rSes, sLog3);
+	//printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
+	Barge->RLog(rSes, 0, sLog1);
+	Barge->RLog(rSes, 0, sLog2);
+	Barge->RLog(rSes, 0, sLog3);
 	
 	rSes.lSampleQtyReq=iOldSampleQtyReq; // restore original sample set size just before exit
 	return (iMargin+dDifferent);
 }
 
 
-double cDeviceTeam::CUDAverify(struct rohanContext& rSes)
+double cTeam::CUDAverify(struct rohanContext& rSes)
 {mIDfunc/// Checks for prsence of CUDA-enabled hardware
 	double compCap=1.0, check; rSes.dMasterCalcVer=0.0;
 	
@@ -897,17 +889,8 @@ inline void getCudaAttribute(T *attribute, CUdevice_attribute device_attribute, 
 }
 // end borrowed section
 
-void cDeviceTeam::RLog(struct rohanContext& rSes, char * sLogEntry)
-{mIDfunc /// dupe to call in place of  cBarge's Rlog from CUDA C kernel launchers
-	using namespace boost::posix_time; 
-    ptime now = second_clock::local_time(); //use the clock 
-    sLogEntry=strtok(sLogEntry, "\n"); // trim any trailing chars
-	*(rSes.ofsRLog) << now << " " << sLogEntry  << endl;
-	if(!rSes.bConsoleUsed)
-		*(rSes.ofsHanLog) << "#\t " << sLogEntry  << endl; // all entries repeated as comments in .han file if any.
-}
 
-void cDeviceTeam::CUDAShowProperties(struct rohanContext& rSes, int device, FILE* fShow)
+void cTeam::CUDAShowProperties(struct rohanContext& rSes, int device, FILE* fShow)
 {
 	if(fShow!=NULL){
 		// following section borrowed from CUDA SDK, (C) Nvidia
@@ -942,4 +925,38 @@ void cDeviceTeam::CUDAShowProperties(struct rohanContext& rSes, int device, FILE
 		// end borrowed section
 		fprintf(fShow,"  sizeof devSes, devLearn, devNet:               %d, %d, %d\n", sizeof(rohanContext), sizeof(rohanLearningSet), sizeof(rohanNetwork) );
 	}
+}
+
+int cTeam::cuMessage(cublasStatus csStatus, char *sName, char *sCodeFile, int iLine, char *sFunc)
+{	
+	char *sMsg;
+
+	switch (csStatus) {
+		case CUBLAS_STATUS_SUCCESS: sMsg=_strdup("operation completed successfully");
+			break;
+		case CUBLAS_STATUS_NOT_INITIALIZED: sMsg=_strdup("library not initialized");
+			break;
+		case CUBLAS_STATUS_ALLOC_FAILED: sMsg=_strdup("resource allocation failed");
+			break;
+		case CUBLAS_STATUS_INVALID_VALUE: sMsg=_strdup("unsupported numerical value was passed to function");
+			break;
+		case CUBLAS_STATUS_ARCH_MISMATCH: sMsg=_strdup("function requires an architectural feature absent from the architecture of the device");
+			break;
+		case CUBLAS_STATUS_MAPPING_ERROR: sMsg=_strdup("access to GPU memory space failed");
+			break;
+		case CUBLAS_STATUS_EXECUTION_FAILED: sMsg=_strdup("GPU program failed to execute");
+			break;
+		case CUBLAS_STATUS_INTERNAL_ERROR: sMsg=_strdup("an internal operation failed");
+			break;
+		default: sMsg=_strdup("unknown response");
+	}
+	fprintf(stderr,"%s %s line %i: CUBLAS %s: %s\n", sCodeFile, sFunc, iLine, sMsg, sName);
+	return 0;
+}
+
+
+
+void cTeam::TeamLog(struct rohanContext& rSes, int iRank, char * sLogEntry) 
+{mIDfunc /// wrapper to call cBarge's RLog from CUDA C kernel launchers
+	Barge->RLog(rSes, iRank, sLogEntry);
 }

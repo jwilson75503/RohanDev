@@ -2,7 +2,7 @@
 #define CTEAM_H
 
 
-class cDeviceTeam// revised to remove subclassing: public cTeam // cTeam members available at their original access
+class cTeam// revised to remove subclassing: public cTeam // cTeam members available at their original access
 {/// A team of mighty stallions; parallel calculations in CUDA C running on the GPU
 		struct rohanContext * rSes;
 		struct rohanNetwork * rNet;
@@ -19,15 +19,15 @@ class cDeviceTeam// revised to remove subclassing: public cTeam // cTeam members
 		int SetDrover( class cDrover * cdDrover); // completed
 		int SetBarge( class cBarge * cbBarge); //completed
 		int GetTrainables( struct rohanContext& rSes, int lSampleQtyReq);
-		//int GetEvalSingleSample( struct rohanContext& rSes, int lSampleIdxReq, char chMethod); /// implemented in cHostTeam, cDeviceTeam
-		//int LetBackpropSingleSample( rohanContext& rSes, int lSampleIdxReq, char chMethod); /// implemented in cHostTeam, cDeviceTeam
+		//int GetEvalSingleSample( struct rohanContext& rSes, int lSampleIdxReq, char chMethod); /// implemented in cHostTeam, cTeam
+		//int LetBackpropSingleSample( rohanContext& rSes, int lSampleIdxReq, char chMethod); /// implemented in cHostTeam, cTeam
 		//int LetTrainNNThresh( rohanContext& rSes, int lSampleQtyReq, char chMethod); // completed
 		int SaveContext(int iMode);
 		int SaveWeights(int iMode);
 		int SaveEvaluation(int iMode);
 		int SetStopCriteria( int lIterationQty, double dTargetRMSE); /// specifies conditions for end of training task
 		int LetEvalSet( rohanContext& rS, char chMethod); /// Submits a subset of the samples available forevaluation.
-	cDeviceTeam( struct rohanContext& rSes); /// ctor body in source
+	cTeam( struct rohanContext& rSes); /// ctor body in source
 		void ShowMe() /*! diagnostic identity display on screen */;
 		int LetHitch(struct rohanContext& rSes) /*! copy data to dev mem and attach structures to team */;
 			int TransferContext(struct rohanContext& rSes, char Direction) /*! copy rSes 0D members to dev mem */;
@@ -45,7 +45,8 @@ class cDeviceTeam// revised to remove subclassing: public cTeam // cTeam members
 		int LetTrainNNThresh( rohanContext& rSes, int o, char chMethod, double dTargetRMSE, int iEpochLength, char Venue);
 		char GetHitched();
 		char GetTaut();
-		void RLog(struct rohanContext& rSes, char * sLogEntry); // dupe to call cBarge's Rlog from CUDA C kernel launchers
+		int cuMessage(cublasStatus csStatus, char *sName, char *sCodeFile, int iLine, char *sFunc);
+		void TeamLog(struct rohanContext& rSes, int iRank, char * sLogEntry); // dupe to call cBarge's Rlog from CUDA C kernel launchers
 		double RmseEvaluateTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iSampleQty); /// runs tests for RMSE and evaluation on both host and GPU
 		int ClassifyTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iSampleQty); /// runs classification tests on both host and GPU
 		double BackPropTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iThreads, int iSampleQty); /// runs tests for backward propagation on both host and GPU

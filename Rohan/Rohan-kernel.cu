@@ -48,7 +48,8 @@ int knlBackProp(struct rohanContext& rSes, int o, char Option, int iBlocks, int 
 		cudaEventCreate( &stop);
 	cudaPrintfInit(8*1024*1024);
 
-		sprintf(sLog, "knlBackProp(rSes, o=%d, Option %c, %d, %d) called\n", o, Option, iBlocks, iThreads); rSes.ctDraftTeam->RLog(rSes, sLog); //*(rSes.ofsRLog) << sLog ;
+		sprintf(sLog, "knlBackProp(rSes, o=%d, Option %c, %d, %d) called\n", o, Option, iBlocks, iThreads); 
+		rSes.Team->TeamLog(rSes, 0, sLog); 
 		cudaEventRecord( start, 0); 
 	mtkBackPropMT<<< iBlocks , iThreads >>>( rSes.lSampleQtyReq, 1, Option); // only single outputs currently supported XX 6/23/12
 		cudaEventRecord( stop, 0);
@@ -62,8 +63,9 @@ int knlBackProp(struct rohanContext& rSes, int o, char Option, int iBlocks, int 
 
 	cudaPrintfDisplay(rSes.deviceBucket, true);
 	cudaPrintfEnd();
-	fprintf(rSes.deviceBucket, "RETURN: %d\n", lTotal);
-	sprintf(sLog, "knlBackProp(rSes, o=%d, Option %c, %d, %d) returns %d after %3.1f ms \n", o, Option, iBlocks, iThreads, lTotal, eTime/1000000); *(rSes.ofsRLog) << sLog ;
+	//fprintf(rSes.deviceBucket, "RETURN: %d\n", lTotal);
+	sprintf(sLog, "knlBackProp(rSes, o=%d, Option %c, %d, %d) returns %d after %3.1f ms \n", o, Option, iBlocks, iThreads, lTotal, eTime/1000000);
+	rSes.Team->TeamLog(rSes, 0, sLog); 
 		cudaEventDestroy( start);
 		cudaEventDestroy( stop);
 
@@ -517,16 +519,13 @@ double knlFFeRmseOpt(struct rohanContext& rSes, int o, char Option, int iBlocks,
 
 	dReturn=rSes.dRMSE=rSes.dDevRMSE=sqrt(dTotal/rSes.lSampleQtyReq);
 
-	if(gDevDebug)conPrintf(">>DEVICE: Time to complete FFeRMSE kernel(%c): %3.1f ms\n", Option, gElapsedTime);
+	if(gDevDebug)printf(">>DEVICE: Time to complete FFeRMSE kernel(%c): %3.1f ms\n", Option, gElapsedTime);
 		cudaEventDestroy( start);
 		cudaEventDestroy( stop);
-		fprintf(rSes.deviceBucket, "RETURN: %f\t%f\n", dTotal, dReturn );
+		//fprintf(rSes.deviceBucket, "RETURN: %f\t%f\n", dTotal, dReturn );
 	
 	sprintf(sLog, "knlFFeRmseOpt(rSes, o=%d, Option %c, %d, %d) returns %2.2f\n", o, Option, iBlocks, iThreads, dReturn); 
-	*(rSes.ofsRLog) << sLog ;
-	if (!rSes.bConsoleUsed)
-		*(rSes.ofsHanLog) << "#\t" << sLog;
-
+	rSes.Team->TeamLog(rSes, 0, sLog); 
 	return dReturn;
 }
 

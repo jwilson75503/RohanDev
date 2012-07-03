@@ -30,6 +30,11 @@ const cuDoubleComplex cdcIdentity = { 1, 0 };
 #define RNETlayers 4
 #define RNETbdry 8
 
+#define USERF 1
+#define GUIF 2
+#define ERRORF 4
+#define WARNINGF 8
+#define CODERF	256
 
 // major data structures
 typedef struct rohanLayer
@@ -149,7 +154,7 @@ typedef struct rohanContext
 	struct rohanNetwork * devNet /*! dev space network currently in use for session. */;
 	struct rohanLearningSet * devLearn /*! dev space learning set currently in use for session. */;
 	struct rohanContext * devSes /*! dev space learning set currently in use for session. */;
-	class cDeviceTeam * ctDraftTeam /*! The calculating "engine" currently in use. */;
+	class cTeam * Team /*! The calculating "engine" currently in use. */;
 	// learning related
 	int lSamplesTrainable /*! Number of samples that exceed dMAX criterion. */;
 	int iOutputFocus /*! which output is under consideration (0=all) */;
@@ -183,18 +188,18 @@ typedef struct rohanContext
 } rohanContext;
 
 #define mCheckMallocWorked(X) if (X == NULL) { printf("%s: malloc fail for x in line %d\n", __FILE__, __LINE__); return 0; } 
-#define mCuMsg(X, Y) if (gDebugLvl || X!=CUBLAS_STATUS_SUCCESS ) cuMessage(X, Y, __FILE__, __LINE__, __FUNCTION__);
+//#define mCuMsg(X, Y) if (gDebugLvl || X!=CUBLAS_STATUS_SUCCESS ) cuMessage(X, Y, __FILE__, __LINE__, __FUNCTION__);
 #define mIDfunc if (gTrace) printf("FUNCTION: %s\n", __FUNCTION__);
 #define mDebug(X, Y) if (Y) printf("%s line %d: ",__FILE__, __LINE__); if ( (gDebugLvl & X) == X) 
 #define mExitKeystroke _getch();
 #define mCheckCudaWorked {cudaError_t cet=cudaGetLastError(); while (cet!=cudaSuccess) { printf(" C U D A : %s %s on or before line %d\n", __FILE__, cudaGetErrorString(cet), __LINE__); cet=cudaGetLastError(); } }
-#define mSafeFree(X) if ( X != NULL ) free(X); X = NULL;
-#define mNANOIdev(X, Y) if ( X != X) cuPrintf("%s %f %d\n", __FUNCTION__, X, Y);
-#define mNANOIhost(X, Y) if ( X != X) printf("%s %f %d\n", __FUNCTION__, X, Y);
+//#define mSafeFree(X) if ( X != NULL ) free(X); X = NULL;
+//#define mNANOIdev(X, Y) if ( X != X) cuPrintf("%s %f %d\n", __FUNCTION__, X, Y);
+//#define mNANOIhost(X, Y) if ( X != X) printf("%s %f %d\n", __FUNCTION__, X, Y);
 
-#define dbprintf(X) fprintf(rSes.debugHandle, X)
-#define conPrintf if(rSes.bConsoleUsed)printf
-#define errPrintf(X,Y) fprintf(stderr, X, Y)
+//#define dbprintf(X) fprintf(rSes.debugHandle, X)
+//#define conPrintf if(rSes.bConsoleUsed)printf
+//#define errPrintf(X,Y) fprintf(stderr, X, Y)
 
 /*! end redundant-include protection */
 #endif

@@ -42,7 +42,6 @@
 #include "cTeam.h"
 #include "Rohan.h"
 #include "Rohan-data.h"
-#include "Rohan-io.h"
 #include "Rohan-kernel.h"
 #include "Rohan-learn.h"
 #ifndef CUDACONLY
