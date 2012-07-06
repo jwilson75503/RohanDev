@@ -31,6 +31,11 @@ class cBarge
 			int SetTeam( class cTeam * cdtTeam); // completed
 		int SetProgOptions(struct rohanContext& rSes, int argc, char * argv[]); // interprets command line options
 		int ObtainGlobalSettings(struct rohanContext& rSes); /// sets initial and default value for globals and settings
+			void ResetContext(struct rohanContext& rSes);
+			int GetSamplesOpt(struct rohanContext& rSes);
+			int GetWeightsOpt(struct rohanContext& rSes);
+			int GetNetworkOpt(struct rohanContext& rSes);
+			int GetSessTagOpt(struct rohanContext& rSes);
 		int ObtainSampleSet(struct rohanContext& rSes); /// chooses and loads the learning set to be worked with Ante-Loop
 			int DoLoadSampleSet(struct rohanContext& rSes, FILE *fileInput); /// pulls in values from .txt files, used for testing before main loop
 			int CurateSectorValue(struct rohanContext& rSes); /// compares sector qty to sample values for adequate magnitude
@@ -53,7 +58,7 @@ class cBarge
 		int AsciiWeightDump(struct rohanContext& rSes, FILE *fileOutput);
 		int LetWriteWeights(struct rohanContext& rSes); /// saves weight values to disk
 		int LetWriteEvals(struct rohanContext& rSes, struct rohanLearningSet& rLearn); /// saves evaluated output values to disk
-		int ShowDiagnostics();
+		int ShowDiagnostics(struct rohanContext& rSes);
 		static char sep_to_space(char c);
 		template <typename T>
 		int VectorFromOption(char * sOption, vector<T> & n, int p);

@@ -210,13 +210,9 @@ char cBarge::sep_to_space(char c){
   return c == ',' || c == '<' || c == '>' ? ' ' : c;
 }
 
-
-int cBarge::ObtainGlobalSettings(struct rohanContext& rSes)
+void cBarge::ResetContext(struct rohanContext& rSes)
 {mIDfunc /// sets initial and default value for globals and settings
-	int iReturn=1;
-	char sLog[255];
 
-	// Context settings
 	// ERRORS and progress tracking
 	gTrace=0; 
 	gDebugLvl=0; 
@@ -230,20 +226,16 @@ int cBarge::ObtainGlobalSettings(struct rohanContext& rSes)
 	rSes.iOutputFocus=1 /*! which output is under consideration (0=all) */;
 	rSes.iEvalBlocks=128; 
 	rSes.iEvalThreads=128; 
-	// hardware related
-		if (Team->CUDAverify(rSes)>=2.0){ // assigns .dMasterCalcVer, .deviceProp.major, .deviceCount
-			cutilSafeCall( cudaSetDevice(rSes.iMasterCalcHw) ); /// all cuda calls to run on first device of highest compute capability device located
-			if (gDebugLvl) cout << "CUDA present, device " << rSes.iMasterCalcHw << " selected." << endl;
-		}
-		else {
-			if (rSes.dMasterCalcVer>1.0)
-				fprintf(stderr, "Warning: CUDA hardware below Compute Capability 2.0.\n");
-			else
-				fprintf(stderr, "Warning: No CUDA hardware or no CUDA functions present.\n");
-			rSes.iMasterCalcHw=-1;
-			++rSes.iWarnings;
-			iReturn=0;
-		}
+
+}
+
+int cBarge::ObtainGlobalSettings(struct rohanContext& rSes)
+{mIDfunc /// sets initial and default value for globals and settings
+	int iReturn=1; string s;
+	char sLog[255];
+
+	ResetContext(rSes);
+
 	// input handling
 	rSes.iEvalMode=0;
 	rSes.bConsoleUsed=false;
@@ -263,8 +255,81 @@ int cBarge::ObtainGlobalSettings(struct rohanContext& rSes)
 	rSes.dMAX=0.0;
 	rSes.iEpochLength=1000; 
 	// network
+	GetNetworkOpt(rSes);
+	rSes.iLayerQty = (rSes.iFirstHiddenSize ? 1:0) + (rSes.iSecondHiddenSize ? 1:0) + 1;
+	// record keeping, including tag
+	char sPath[MAX_PATH], sHanPath[MAX_PATH];
+	GetUserDocPath(sPath); // sPath now has "C:\users\documents"
+	sprintf(rSes.sRohanVerPath, "%s\\Rohan-%s", sPath, VERSION); // .sRohanVerPath has "C:\users\documents\Rohan_0.9.3"
+	strcpy( rSes.sSesName, vm["tag"].as<string>().c_str() );
+	if(DirectoryEnsure(rSes.sRohanVerPath)){
+
+		using namespace boost::posix_time; 
+		ptime now = second_clock::local_time(); //use the clock
+		// establish Rlog
+		sprintf(sPath, "%s\\RohanLog.txt", rSes.sRohanVerPath); // sPath has full rlog pathname
+		rSes.ofsRLog=new ofstream(sPath, std::ios::app|std::ios::out); 
+		*(rSes.ofsRLog) << "\tSTART Rohan v" << VERSION << " Neural Network Simulator\n";
+		// establish .han file 
+		sprintf( sHanPath, "%s\\%s.han", rSes.sRohanVerPath, rSes.sSesName); //sHanPath has fill hanlog pathname
+		rSes.ofsHanLog=new ofstream(sHanPath, std::ios::out); 
+		//rSes.ofsHanLog=new ofstream(sHanPath, std::ios::app|std::ios::out); 
+		*(rSes.ofsHanLog) << "#\t" << now << "\tSTART Rohan v" << VERSION << " Neural Network Simulator\n";
+		*(rSes.ofsHanLog) << "#\t" << now << AUTHORCREDIT << "\n";
+#ifdef _DEBUG
+		// establish bucket files
+		//AsciiFileHandleWrite(rSes.sRohanVerPath, "DevBucket.txt", &(rSes.deviceBucket));
+		//fprintf(rSes.deviceBucket, "%s\tSTART Rohan v%s Neural Network Simulator\n", "to_simple_string(now)", VERSION);
+		//AsciiFileHandleWrite(rSes.sRohanVerPath, "HostBucket.txt", &(rSes.hostBucket));
+		//fprintf(rSes.hostBucket, "%s\tSTART Rohan v%s Neural Network Simulator\n", "to_simple_string(now)", VERSION);
+#endif
+	}
+	else {
+		sprintf(sLog, "Directory %s could not be created", rSes.sRohanVerPath); RLog(rSes, USERF+ERRORF, sLog);
+	}
+	// samples
+	rSes.lSampleQty=0; // no samples loaded yet
+	rSes.lSampleQtyReq=-1; // no samples loaded yet
+	//rSes.iInputQty // part of network above
+	//rSes.iOutputQty // part of network above
+
+	// LEARNING SET
+	//int iEvalMode /*! Defaults to discrete outputs but a value of 0 denotes Continuous outputs. */;
+	rSes.rLearn->lSampleQty=0;
+	rSes.rLearn->iValuesPerLine=0;
+	rSes.rLearn->iInputQty=rSes.iInputQty;
+	rSes.rLearn->iOutputQty=rSes.iOutputQty;
+	//rohanSample *rSample /*! Array of rohanSample structures. */; //removed 10/24/11
+	//FILE *fileInput /*! The filehandle used for reading the learning set from the given file-like object. */; 
+	rSes.rLearn->bContInputs=false; //default
+	rSes.rLearn->iContOutputs=false; //default
+	rSes.rLearn->lSampleIdxReq=-1;
+	//void* hostLearnPtr;
+	
+	// hardware related
+		if (Team->CUDAverify(rSes)>=2.0){ // assigns .dMasterCalcVer, .deviceProp.major, .deviceCount
+			cutilSafeCall( cudaSetDevice(rSes.iMasterCalcHw) ); /// all cuda calls to run on first device of highest compute capability device located
+			if (gDebugLvl) cout << "CUDA present, device " << rSes.iMasterCalcHw << " selected." << endl;
+		}
+		else {
+			if (rSes.dMasterCalcVer>1.0)
+				fprintf(stderr, "Warning: CUDA hardware below Compute Capability 2.0.\n");
+			else
+				fprintf(stderr, "Warning: No CUDA hardware or no CUDA functions present.\n");
+			rSes.iMasterCalcHw=-1;
+			++rSes.iWarnings;
+			iReturn=0;
+		}
+
+	return iReturn;
+}
+
+int cBarge::GetNetworkOpt(struct rohanContext& rSes)
+{mIDfunc///parses network specification program_option 
+	char sLog[255];
 	rSes.iContActivation=true; //rSes.rNet->iContActivation=true; 
 	vector<int> v;
+
 	if(VectorFromOption("network", v, 5)){
 		rSes.iSectorQty = v.at(0);
 		rSes.iInputQty = v.at(1);
@@ -309,85 +374,24 @@ int cBarge::ObtainGlobalSettings(struct rohanContext& rSes)
 			rSes.iSecondHiddenSize = 0;
 			rSes.iOutputQty = 1;
 		}
+
+		// NETWORK STRUCT
+		rSes.rNet->iSectorQty=rSes.iSectorQty; // 4
+		rSes.rNet->kdiv2=rSes.iSectorQty/2; 
+		rSes.rNet->iLayerQTY=rSes.iLayerQty+1; // 4
+		rSes.rNet->iContActivation=rSes.iContActivation;
+		rSes.rNet->dK_DIV_TWO_PI=rSes.iSectorQty/TWO_PI;
+		rSes.rNet->two_pi_div_sect_qty=TWO_PI/rSes.iSectorQty; // 8
+
+		return true;
 	}
 	else{
-
+		RLog(rSes, GUIF, "network=fail");
+		sprintf(sLog, "bad network spec: %s", vm["network"].as<string>().c_str());
+		RLog(rSes, ERRORF, sLog);
+		return false;
 	}
-	rSes.iLayerQty = (rSes.iFirstHiddenSize ? 1:0) + (rSes.iSecondHiddenSize ? 1:0) + 1;
-	// record keeping, including tag
-	char sPath[MAX_PATH], sHanPath[MAX_PATH];
-	GetUserDocPath(sPath); // sPath now has "C:\users\documents"
-	sprintf(rSes.sRohanVerPath, "%s\\Rohan_%s", sPath, VERSION); // .sRohanVerPath has "C:\users\documents\Rohan_0.9.3"
-	strcpy( rSes.sSesName, vm["tag"].as<string>().c_str() );
-	if(DirectoryEnsure(rSes.sRohanVerPath)){
-		using namespace boost::posix_time; 
-		ptime now = second_clock::local_time(); //use the clock
-		// establish Rlog
-		sprintf(sPath, "%s\\RohanLog.txt", rSes.sRohanVerPath); // sPath has full rlog pathname
-		rSes.ofsRLog=new ofstream(sPath, std::ios::app|std::ios::out); 
-		*(rSes.ofsRLog) << "\tSTART Rohan v" << VERSION << " Neural Network Simulator\n";
-		// establish .han file 
-		sprintf( sHanPath, "%s\\%s.han", rSes.sRohanVerPath, rSes.sSesName); //sHanPath has fill hanlog pathname
-		rSes.ofsHanLog=new ofstream(sHanPath, std::ios::out); 
-		//rSes.ofsHanLog=new ofstream(sHanPath, std::ios::app|std::ios::out); 
-		*(rSes.ofsHanLog) << "#\t" << now << "\tSTART Rohan v" << VERSION << " Neural Network Simulator\n" ;
-		// establish bucket files
-		AsciiFileHandleWrite(rSes.sRohanVerPath, "DevBucket.txt", &(rSes.deviceBucket));
-		//fprintf(rSes.deviceBucket, "%s\tSTART Rohan v%s Neural Network Simulator\n", "to_simple_string(now)", VERSION);
-		AsciiFileHandleWrite(rSes.sRohanVerPath, "HostBucket.txt", &(rSes.hostBucket));
-		//fprintf(rSes.hostBucket, "%s\tSTART Rohan v%s Neural Network Simulator\n", "to_simple_string(now)", VERSION);
-	}
-	else {
-		sprintf(sLog, "Directory %s could not be created", rSes.sRohanVerPath); RLog(rSes, USERF+WARNINGF, sLog);
-	}
-	// samples
-	rSes.lSampleQty=0; // no samples loaded yet
-	rSes.lSampleQtyReq=-1; // no samples loaded yet
-	//rSes.iInputQty // part of network above
-	//rSes.iOutputQty // part of network above
-
-	// LEARNING SET
-	//int iEvalMode /*! Defaults to discrete outputs but a value of 0 denotes Continuous outputs. */;
-	rSes.rLearn->lSampleQty=0;
-	rSes.rLearn->iValuesPerLine=0;
-	rSes.rLearn->iInputQty=rSes.iInputQty;
-	rSes.rLearn->iOutputQty=rSes.iOutputQty;
-	//rohanSample *rSample /*! Array of rohanSample structures. */; //removed 10/24/11
-	//FILE *fileInput /*! The filehandle used for reading the learning set from the given file-like object. */; 
-	rSes.rLearn->bContInputs=false; //default
-	rSes.rLearn->iContOutputs=false; //default
-	rSes.rLearn->lSampleIdxReq=-1;
-	//void* hostLearnPtr;
-	
-	// NETWORK STRUCT
-	rSes.rNet->iSectorQty=rSes.iSectorQty; // 4
-	rSes.rNet->kdiv2=rSes.iSectorQty/2; 
-	rSes.rNet->iLayerQTY=rSes.iLayerQty+1; // 4
-	rSes.rNet->iContActivation=rSes.iContActivation;
-	rSes.rNet->dK_DIV_TWO_PI=rSes.iSectorQty/TWO_PI;
-	rSes.rNet->two_pi_div_sect_qty=TWO_PI/rSes.iSectorQty; // 8
-
-#ifdef _DEBUG
-	if(gTrace) cout << "Tracing is ON.\n" ;
-	if (gDebugLvl){
-		cout << "Debug level is " << gDebugLvl << "\n" ;
-		cout << "Session warning and session error counts reset.\n";
-		rSes.rNet->iContActivation ? cout << "Activation default is CONTINUOUS.\n" : cout << "Activation default is DISCRETE.\n"; 
-		// XX defaulting to false makes all kinds of heck on the GPU
-		rSes.bRInJMode ? cout << "Reversed Input Order is ON.\n" : cout << "Reversed Input Order is OFF.\n"; 
-		// this is working backward for some reason 2/08/11 // still fubared 3/7/12 XX
-		rSes.bRMSEon ? cout << "RMSE stop condition is ON. XX\n" : cout << "RMSE stop condition is OFF. XX\n"; //
-		cout << "Epoch length is " << rSes.iEpochLength << " iterations.\n";
-		cout << rSes.iEvalBlocks << " EVAL Blocks per Kernel, " << rSes.iEvalThreads << " EVAL Threads per Block.\n";
-		cout << rSes.iBpropBlocks << " BPROP Blocks per Kernel, " << rSes.iBpropThreads << " BPROP Threads per Block.\n";
-		rSes.iEvalMode ? cout << "Continuous Inputs TRUE by DEFAULT.\n" : cout << "Continuous Inputs FALSE by DEFAULT.\n";
-		rSes.iContActivation ? cout << "Continuous Outputs true by DEFAULT.\n" : cout << "Continuous Outputs false by DEFAULT.\n";
-	}
-#endif
-
-	return iReturn;
 }
-
 
 int cBarge::ObtainSampleSet(struct rohanContext& rSes)
 {mIDfunc /// loads the learning set to be worked with Ante-Loop
@@ -1282,7 +1286,7 @@ int cBarge::LetWriteEvals(struct rohanContext& rSes, struct rohanLearningSet& rL
 		return 0;
 }
 
-int cBarge::ShowDiagnostics()
+int cBarge::ShowDiagnostics(struct rohanContext& rSes)
 {mIDfunc
 	int iReturn=1;
 
@@ -1291,17 +1295,35 @@ int cBarge::ShowDiagnostics()
 		printf("No team!\n", iReturn=0);
 	if(Drover==NULL)
 		printf("No drover!\n", iReturn=0);
-	if(rSes->rLearn->cdcXInputs==NULL)
+	if(rSes.rLearn->cdcXInputs==NULL)
 		printf("No complex inputs at host!\n", iReturn=0);
-	if(rSes->rLearn->dDOutputs==NULL)
+	if(rSes.rLearn->dDOutputs==NULL)
 		printf("No scalar outputs at host!\n", iReturn=0);
-	if(rSes->rLearn->cdcDOutputs==NULL)
+	if(rSes.rLearn->cdcDOutputs==NULL)
 		printf("No complex outputs at host!\n", iReturn=0);
 	if (rLearn==NULL)
 		printf("No rLearn structure!\n", iReturn=0);
 	else
 		//printf("Holding %d samples w/ %d inputs, %d output(s)\n", *rLearn->lSampleQty, *rLearn->iInputQty, *rLearn->iOutputQty);
-		printf("Barge is holding %d samples w/ %d inputs, %d output(s).\n", rSes->rLearn->lSampleQty, rSes->rLearn->iInputQty, rSes->rLearn->iOutputQty);
+		printf("Barge is holding %d samples w/ %d inputs, %d output(s).\n", rSes.rLearn->lSampleQty, rSes.rLearn->iInputQty, rSes.rLearn->iOutputQty);
+
+#ifdef _DEBUG
+	if(gTrace) cout << "Tracing is ON.\n" ;
+	if (gDebugLvl){
+		cout << "Debug level is " << gDebugLvl << "\n" ;
+		cout << "Session warning and session error counts reset.\n";
+		rSes.rNet->iContActivation ? cout << "Activation default is CONTINUOUS.\n" : cout << "Activation default is DISCRETE.\n"; 
+		// XX defaulting to false makes all kinds of heck on the GPU
+		rSes.bRInJMode ? cout << "Reversed Input Order is ON.\n" : cout << "Reversed Input Order is OFF.\n"; 
+		// this is working backward for some reason 2/08/11 // still fubared 3/7/12 XX
+		rSes.bRMSEon ? cout << "RMSE stop condition is ON. XX\n" : cout << "RMSE stop condition is OFF. XX\n"; //
+		cout << "Epoch length is " << rSes.iEpochLength << " iterations.\n";
+		cout << rSes.iEvalBlocks << " EVAL Blocks per Kernel, " << rSes.iEvalThreads << " EVAL Threads per Block.\n";
+		cout << rSes.iBpropBlocks << " BPROP Blocks per Kernel, " << rSes.iBpropThreads << " BPROP Threads per Block.\n";
+		rSes.iEvalMode ? cout << "Continuous Inputs TRUE by DEFAULT.\n" : cout << "Continuous Inputs FALSE by DEFAULT.\n";
+		rSes.iContActivation ? cout << "Continuous Outputs true by DEFAULT.\n" : cout << "Continuous Outputs false by DEFAULT.\n";
+	}
+#endif
 	
 	return iReturn;
 }

@@ -64,16 +64,18 @@ int cDrover::SetDroverBargeAndTeam( class cBarge& cB, class cTeam& cT)
 
 int cDrover::DoAnteLoop(struct rohanContext& rSes, int argc, char * argv[])
 {mIDfunc /// This function prepares all parameters and data structures necesary for learning and evaluation.
-	int iReturn=1;
+	int iReturn=1; char sLog[255];
 	
-	fprintf(stdout, "Rohan v%s Neural Network Simulator\n", VERSION);
+	fprintf(stdout, "Rohan %s neural net simulator\n", VERSION);
+	fprintf(stdout, "%s\n", AUTHORCREDIT);
 	if ( Barge->SetProgOptions( rSes, argc, argv ) < 2 ) // narch and samples are required
 		return 0;
 	iReturn=Barge->ObtainGlobalSettings(rSes);
+	sprintf(sLog, "rohan=%s", argv[0]); Barge->RLog(rSes, GUIF, sLog );
 	iReturn=Barge->ObtainSampleSet(rSes);
 	iReturn=Barge->DoPrepareNetwork(rSes);
 	if(iReturn*=ShowDiagnostics( rSes, *(rSes.rNet) ))
-			iReturn*=Barge->ShowDiagnostics(); 
+			iReturn*=Barge->ShowDiagnostics(rSes); 
 	
 	return iReturn;
 }
@@ -205,7 +207,7 @@ int cDrover::DoMainLoop(struct rohanContext& rSes)
 }
 
 void cDrover::DoLearnOpt(struct rohanContext& rSes)
-{mIDfunc
+{mIDfunc///parses learn directive program_option 
 	char sLog[255];
 	vector<double> v;
 	
@@ -230,14 +232,14 @@ void cDrover::DoLearnOpt(struct rohanContext& rSes)
 	}
 	else{ // missing or extra parameters
 		Barge->RLog(rSes, GUIF, "learn=fail");
-		sprintf(sLog, "bad learn spec: %s", Barge->vm["learn"].as<string>().c_str());
+		sprintf(sLog, "bad learn directive: %s", Barge->vm["learn"].as<string>().c_str());
 		Barge->RLog(rSes, WARNINGF, sLog);
 	}
 }
 
 
 void cDrover::DoEvalOpt(struct rohanContext& rSes)
-{mIDfunc
+{mIDfunc///parses eval directive program_option 
 	char sLog[255];
 	vector<int> v;
 
@@ -264,7 +266,7 @@ void cDrover::DoEvalOpt(struct rohanContext& rSes)
 	}
 	else{
 		Barge->RLog(rSes, GUIF, "eval=fail");
-		sprintf(sLog, "bad eval spec: %s", Barge->vm["eval"].as<string>().c_str());
+		sprintf(sLog, "bad eval directive: %s", Barge->vm["eval"].as<string>().c_str());
 		Barge->RLog(rSes, WARNINGF, sLog);
 	}
 }

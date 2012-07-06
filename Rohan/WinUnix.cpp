@@ -25,13 +25,15 @@ int DirectoryEnsure(char * sPath)
 	if ((GetFileAttributes(sPath)) == INVALID_FILE_ATTRIBUTES){
 		//cout << "Directory doesn't exist\n";
 		CreateDirectory(sPath, 0);
-		//cout << "Directory Created\n";
+		fprintf(stdout, "Directory %s created\n", sPath);
 	}
 
 	if ((GetFileAttributes(sPath)) == INVALID_FILE_ATTRIBUTES){
 		return false;
 	}
-	else
+	else{
+		fprintf(stdout, "Directory %s used\n", sPath);
 		return true;
+	}
 }
 

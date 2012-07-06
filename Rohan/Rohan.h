@@ -5,7 +5,9 @@
 //#define VERSION "0.9" // accurately working
 //#define VERSION "0.9.1" // functional learning, continuous and discrete activation
 //#define VERSION "0.9.2" // passes eval, classification, and learning tests
-#define VERSION "0.9.3" // included shared device memory, logging
+//#define VERSION "0.9.3" // included shared device memory, logging
+#define VERSION "0.9.4" // automated response files .roh and .han
+#define AUTHORCREDIT "jwilson@clueland.com"
 
 /*! Includes, cuda */
 #include "stdafx.h"
