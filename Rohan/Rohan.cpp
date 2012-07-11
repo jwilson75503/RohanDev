@@ -30,10 +30,13 @@ int _tmain(int argc, _TCHAR* argv[])
 	struct rohanNetwork rNet;
 	struct rohanLearningSet rLearn;
 
+	fprintf(stdout, "Rohan %s Neural Net Simulator - %s\n", VERSION, AUTHORCREDIT);
+	
 	// create class objects
+	cBarge Barge(rSes); // the barge holds common data like the learning set and weights
+	cRamp Ramp(rSes); // the ramp loads and shuffles data 
 	cTeam Team(rSes); // the horse team does the work of computation
-	cBarge Barge(rSes); // the barge loads and holds common data like the learning set and weights
-	cDrover Drover(rSes, rLearn, rNet, Barge, Team); // the drover handles the user input and bosses the other objects
+	cDrover Drover(rSes, rLearn, rNet, Barge, Ramp, Team, argc, argv); // the drover handles the user input and bosses the other objects
 
 	if ( Drover.DoAnteLoop(rSes, argc, argv) ) // prepare data structures and load parameters
 		Drover.DoMainLoop(rSes); // proceed with operations based on session variables and external settings

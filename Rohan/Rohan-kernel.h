@@ -5,11 +5,13 @@ extern"C"
 int SetDevDebug(int iDevDebug);
 
 extern"C"
-int knlBackProp(struct rohanContext& rSes, int o, char Option, int iBlocks, int iThreads);
+int knlBackProp(struct rohanContext& rSes, int o, char Option, int iBlocks, int iThreads, char cModel);
 
-__global__ void mtkBackPropMT( int lSampleQtyReq, int o, char Option);
+__global__ void mtkBackPropMT( int lSampleQtyReq, int o, char Option, char cModel);
 
 __device__ void subkBackPropRoptMT(int lSampleQtyReq, int o);
+
+__device__ void subkBackPropRoptMWarp(int lSampleQtyReq, int o);
 
 __device__ void subkBackPropMT(int lSample, int o);
 

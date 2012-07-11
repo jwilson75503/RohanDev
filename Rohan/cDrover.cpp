@@ -12,10 +12,11 @@ extern float gElapsedTime, gKernelTimeTally;
 
 //////////////// class cDrover begins ////////////////
 
-cDrover::cDrover( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& rN, cBarge& cB, cTeam& cT)
+cDrover::cDrover( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& rN, cBarge& cB, cRamp& cR, cTeam& cT, int argc, _TCHAR * argv[])
+//cDrover( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& rN, cBarge& cB, cTeam& cT, int argc, _TCHAR * argv[])
 {/// begin constructor
-	SetContext(rC, rL, rN); 
-	SetDroverBargeAndTeam(cB, cT); 
+	SetContext(rC, rL, rN, argc, argv); 
+	SetDroverBargeAndTeam(cB, cR, cT); 
 	//ShowMe();
 } // end ctor
 
@@ -26,7 +27,7 @@ void cDrover::ShowMe()
 }
 
 
-int cDrover::SetContext( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& rN)
+int cDrover::SetContext( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& rN, int argc, _TCHAR * argv[])
 {/// enables pointer access to master context struct, sets up pointers to toher objects of interest
 	rSes = &rC;
 	// pointers to learning set and network object copies in host memory space are recorded
@@ -35,7 +36,9 @@ int cDrover::SetContext( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& r
 	rC.rNet = &rN; 
 	rNet = &rN;
 
-	//rC.dDevRMSE=9.9; rSes->dDevRMSE=8.8; printf("<<<%f - %f>>>\n", rC.dDevRMSE, rSes->dDevRMSE);
+	rSes->argc=argc;
+	rSes->argv=argv;
+
 	// pointers to learning set and network object copies in dev memory space are recorded
 	cudaGetSymbolAddress( (void**)&rC.devSes, "devSes" );
 		mCheckCudaWorked
@@ -48,34 +51,44 @@ int cDrover::SetContext( rohanContext& rC, rohanLearningSet& rL, rohanNetwork& r
 }
 
 
-int cDrover::SetDroverBargeAndTeam( class cBarge& cB, class cTeam& cT)
+int cDrover::SetDroverBargeAndTeam( class cBarge& cB, class cRamp& cR, class cTeam& cT)
+//SetDroverBargeAndTeam( class cBarge& cB, class cTeam& cT)
 {mIDfunc /// sets pointers to hitch barge to team and mount driver on barge
 	Barge = &cB;
 	Team = &cT;
+	Ramp = &cR;
 	Barge->SetDrover(this);
+	Barge->SetRamp(Ramp);
 	Barge->SetTeam(Team);
+	Ramp->SetDrover(this);
+	Ramp->SetBarge(Barge);
+	Ramp->SetTeam(Team);
 	Team->SetDrover(this);
 	Team->SetBarge(Barge);
+	Team->SetRamp(Ramp);
 	rSes->Team=&cT;
 	
 	return 0;
 }
 
 
-int cDrover::DoAnteLoop(struct rohanContext& rSes, int argc, char * argv[])
+int cDrover::DoAnteLoop(struct rohanContext& rSes, int argc, _TCHAR * argv[])
 {mIDfunc /// This function prepares all parameters and data structures necesary for learning and evaluation.
 	int iReturn=1; char sLog[255];
 	
-	fprintf(stdout, "Rohan %s neural net simulator\n", VERSION);
-	fprintf(stdout, "%s\n", AUTHORCREDIT);
-	if ( Barge->SetProgOptions( rSes, argc, argv ) < 2 ) // narch and samples are required
+	if ( !Barge->PrepareAllSettings(rSes) )
 		return 0;
-	iReturn=Barge->ObtainGlobalSettings(rSes);
+
 	sprintf(sLog, "rohan=%s", argv[0]); Barge->RLog(rSes, GUIF, sLog );
-	iReturn=Barge->ObtainSampleSet(rSes);
-	iReturn=Barge->DoPrepareNetwork(rSes);
-	if(iReturn*=ShowDiagnostics( rSes, *(rSes.rNet) ))
-			iReturn*=Barge->ShowDiagnostics(rSes); 
+
+	if ( !Barge->ObtainSampleSet(rSes) )
+		return 0;
+	if ( !Barge->DoPrepareNetwork(rSes) )
+		return 0;
+	if( !ShowDiagnostics( rSes, *(rSes.rNet) ) )
+		return 0;
+	if( !Barge->ShowDiagnostics(rSes) )
+		return 0;
 	
 	return iReturn;
 }
@@ -84,14 +97,14 @@ int cDrover::DoAnteLoop(struct rohanContext& rSes, int argc, char * argv[])
 int cDrover::ShowDiagnostics(struct rohanContext& rSes, struct rohanNetwork& rNet)
 {mIDfunc /// show some statistics, dump weights, and display warning and error counts
 	double devdRMSE=0.0, hostdRMSE=0.0;
-	int iReturn=1;
+	int iReturn=1; char sLog[255];
 	cuDoubleComplex keepsakeWts[MAXWEIGHTS]; // 16 x 2048
 	
 #ifdef _DEBUG
 		cudaMemcpy( keepsakeWts, rSes.rNet->Wt, 16*MAXWEIGHTS, cudaMemcpyHostToHost); // backup weights for post-test restoration
 		//printf("(backup wt %08lX)\n", crc32buf( (char*)rSes.rNet->Wt, 16*MAXWEIGHTS ) ); // weight check
 	
-		Team->LetHitch(rSes);
+		Team->LetHitch(rSes, 'G');
 		Team->LetSlack(rSes);
 	
 		Team->RmseEvaluateTest(rSes, rNet, 2 , 0);
@@ -119,9 +132,10 @@ int cDrover::ShowDiagnostics(struct rohanContext& rSes, struct rohanNetwork& rNe
 		//printf("(restrd wt %08lX)\n", crc32buf( (char*)rSes.rNet->Wt, 16*MAXWEIGHTS ) ); // weight check
 #endif	
 	
-	if (rSes.iWarnings) fprintf(stderr, "Drover Diagnosis: %d warnings.\n", rSes.iWarnings);
-	if (rSes.iErrors) fprintf(stderr, "Drover Diagnosis: %d operational errors.\n", rSes.iErrors);
-
+		if (rSes.iWarnings || rSes.iErrors){
+			sprintf(sLog, "Diagnosis: %d warning(s), %d operational error(s).\n", rSes.iWarnings, rSes.iErrors );
+			Barge->RLog(rSes, USERF, sLog);
+		}
 	return iReturn;
 }
 
@@ -240,7 +254,7 @@ void cDrover::DoLearnOpt(struct rohanContext& rSes)
 
 void cDrover::DoEvalOpt(struct rohanContext& rSes)
 {mIDfunc///parses eval directive program_option 
-	char sLog[255];
+	char sLog[255], sFileAscii[255];
 	vector<int> v;
 
 	if(Barge->VectorFromOption("eval", v, 4) ) {
@@ -250,13 +264,13 @@ void cDrover::DoEvalOpt(struct rohanContext& rSes)
 		rSes.lSampleQtyReq = v.at(3);
 		Team->GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'D');
 		//Team->LetSlack(rSes); // make sure device outputs are transferred back to host
-		printf("%s: first %d samples requested\nRMSE= %f\n", rSes.sWeightSet, rSes.lSampleQtyReq, rSes.dDevRMSE);		
+		sprintf(sLog, "%s: first %d samples requested\nRMSE= %f\n", rSes.sWeightSet, rSes.lSampleQtyReq, rSes.dDevRMSE);		
+		Barge->RLog(rSes, USERF, sLog);
 		// write evaluation report
-		char sLog[255], sFileAscii[255];
-		sprintf(sFileAscii,"%s%d%s",rSes.sSesName, (int)(rSes.dRMSE*100), "Evals.txt"); // do not exceed 254 char file name
+		sprintf(sFileAscii,"%s%d%s",rSes.sSesName, (int)(rSes.dDevRMSE*100), "Evals.txt"); // do not exceed 254 char file name
 		int lReturn=Barge->LetWriteEvals(rSes, *rSes.rLearn);
 		// Log event
-		sprintf(sLog, "%d evals writen to %s", lReturn, sFileAscii ); // document success and filename
+		sprintf(sLog, "%d evals written to %s", lReturn, sFileAscii ); // document success and filename
 		printf("%s\n", sLog);
 		Barge->RLog(rSes, USERF, sLog);
 		Barge->RLog(rSes, GUIF, "eval=pass");
@@ -404,7 +418,7 @@ int cDrover::GetWeightSet(struct rohanContext& rSes)
 	strcat(sWeightSet, ".wgt");
 
 	// File handle for input
-	iReturn=Barge->BinaryFileHandleRead(sWeightSet, &fileInput);
+	iReturn=Barge->BinaryFileHandleRead(rSes, sWeightSet, &fileInput);
 	if (iReturn==0) // unable to open file
 		++rSes.iErrors;
 	else{ // file opened normally
@@ -503,7 +517,7 @@ int cDrover::LetUtilities(struct rohanContext& rSes)
 			cout << "Enter name of .txt file to convert to .wgt:" << endl;
 			cin >> bfname;
 			strcat(afname, bfname); strcat(afname, ".txt"); strcat(bfname, ".wgt");
-			Barge->AsciiFileHandleRead( afname, &ASCIN );
+			Barge->AsciiFileHandleRead( rSes, afname, &ASCIN );
 			Barge->BinaryFileHandleWrite( bfname, &BINOUT );
 			#define MAX_REC_LEN 65536 /* Maximum size of input buffer */
 			while(fgets(lineIn, MAX_REC_LEN, ASCIN)) { //each line is read in turn

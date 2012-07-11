@@ -18,6 +18,13 @@ ostream& operator<<(ostream& os, const vector<T>& v)
     copy(v.begin(), v.end(), ostream_iterator<T>(cout, " ")); 
     return os;
 }
+
+// another helper 
+char cBarge::sep_to_space(char c){
+  return c == ',' || c == '<' || c == '>' ? ' ' : c;
+}
+
+
 //#include <boost/filesystem.hpp>
 //using namespace boost::filesystem;
 
@@ -51,16 +58,95 @@ int cBarge::SetDrover( class cDrover * cdDrover)
 }
 
 
-int cBarge::SetTeam( class cTeam * cdtTeam)
-{/// enables pointer access to active Team object
-	Team = cdtTeam;
+int cBarge::SetRamp( class cRamp * crRamp)
+{/// enables pointer access to active Drover object
+	Ramp = crRamp;
 	return 0;
 }
 
 
-int cBarge::SetProgOptions(struct rohanContext& rSes, int argc, char * argv[])
+int cBarge::SetTeam( class cTeam * ctTeam)
+{/// enables pointer access to active Team object
+	Team = ctTeam;
+	return 0;
+}
+
+
+void cBarge::ResetSettings(struct rohanContext& rSes, struct rohanNetwork& rNet, struct rohanLearningSet& rLearn)
+{mIDfunc /// sets initial and default value for globals and settings
+
+	// ERRORS and progress tracking
+	gTrace=0; 
+	gDebugLvl=0; 
+	rSes.iWarnings=0; rSes.iErrors=0; 
+	rSes.lMemStructAlloc=0;
+	// eval related
+	rSes.iSaveInputs=0 /* include inputs when saving evaluations */;
+	rSes.iSaveOutputs=0 /* include desired outputs when saving evaluations */;
+	rSes.iSaveSampleIndex=0 /* includes sample serials when saving evaluations */;
+	rSes.iOutputFocus=1 /*! which output is under consideration (0=all) */;
+	rSes.iEvalBlocks=128; 
+	rSes.iEvalThreads=128; 
+	// hardware related
+	int iMasterCalcHw=-2;
+	double dMasterCalcVer=0.0;
+	int deviceCount=-1;
+	// input handling
+	rSes.iReadMode=1; // default to discrete=1 (0=continuous)
+	rSes.bConsoleUsed=false;
+	rSes.bRInJMode=false; 
+	rSes.bRMSEon=true; 
+	strcpy(rSes.sLearnSet, "LS-NOT-SPECIFIED");
+	strcpy(rSes.sWeightSet, "WTS-NOT-SPECIFIED");
+	SetVerPath(rSes);
+	sprintf(rSes.sDefaultConfig, "%s\\rohan.roh", rSes.sRohanVerPath);
+
+// learning related
+	rSes.lSamplesTrainable=-1;
+	rSes.iOutputFocus=1;
+	rSes.iBpropBlocks=1; 
+	rSes.iBpropThreads=32; 
+	rSes.dHostRMSE=0.0;
+	rSes.dDevRMSE=0.0;
+	rSes.dRMSE=0.0;
+	rSes.dTargetRMSE=0.0;
+	rSes.dMAX=0.0;
+	rSes.iEpochLength=1000; 
+	// network related
+	rSes.iContActivation=1; // default to true (quicker)
+	rSes.iSectorQty=0;
+	rSes.iFirstHiddenSize=0;
+	rSes.iSecondHiddenSize=0;
+	rSes.iLayerQty=0;
+	// record keeping
+	rSes.iLoggingEnabled=false;
+	//rSes.ofsRLog=?;
+	//rSes.ofsHanLog=?;
+	strcpy(rSes.sRohanVerPath, "NO-PATH-SET");
+	strcpy(rSes.sSesName, "NO-TAG-SET");
+	rSes.lSampleQty=-1;
+	rSes.iInputQty=-1; 
+	rSes.iOutputQty=-1;
+	rSes.lSampleQtyReq=-1;
+	
+	//rLearn
+	rLearn.lSampleQty=0;
+	rLearn.iValuesPerLine=0;
+	rLearn.iInputQty=0;
+	rLearn.iOutputQty=0;
+	rLearn.bContInputs=0; //default
+	rLearn.iContOutputs=0; //default
+	rLearn.lSampleIdxReq=-1;
+
+	//rNet ?
+
+}
+
+
+int cBarge::SetProgOptions(struct rohanContext& rSes, int argc, _TCHAR * argv[])
 {mIDfunc /// Declare the supported options.
-	int iReturn=0; // returns number of essential parameters present, or -1 if an error or prefunctory parameter like help or version is supplied.
+	int iReturn=0; // returns 0 if version or help is specified, or if insufficient paramters for automated operation are given, 1 otherwise
+		// console based operations not supported atm
     try {
 		string config_file, eval_string, learn_string, net_arch, sample_file, tag_session, weight_file;
 		
@@ -70,7 +156,7 @@ int cBarge::SetProgOptions(struct rohanContext& rSes, int argc, char * argv[])
 		generic.add_options()
 			("version,v", "print version string")
 			("help,h", "produce help message")
-			("config,c", po::value<string>(&config_file)->default_value("rohan.roh"), "name of a file of a configuration.")
+			("config,c", po::value<string>(&config_file)->default_value(rSes.sDefaultConfig), "name of a file of a configuration.")
             ;
 		    
 		// Declare a group of options that will be 
@@ -90,8 +176,8 @@ int cBarge::SetProgOptions(struct rohanContext& rSes, int argc, char * argv[])
 		// in config file, but will not be shown to the user.
 		po::options_description hidden("Hidden options");
 		hidden.add_options()
-			("include-path,I", po::value< vector<string> >()->composing(), "include path")
-			("input-file", po::value< vector<string> >(), "input file")
+			("include-path,I", po::value< vector<string> >()->composing(), "include path") // XX
+			("input-file", po::value< vector<string> >(), "input file") //XX
 			; 
 
 		po::options_description cmdline_options;
@@ -113,25 +199,19 @@ int cBarge::SetProgOptions(struct rohanContext& rSes, int argc, char * argv[])
         
         if (vm.count("help")) {
             cout << visible << "\n";
-            return -1;
+            return 0;
         }
 
         if (vm.count("version")) {
             cout << VERSION << ".\n";
-			return -1;
+			return 0;
         }
-
-		if (vm.count("tag"))
-		{
-			cout << "Tagged session is : " ;
-			cout << vm["tag"].as<string>() << "\n";
-		}
 
 		ifstream ifs(config_file.c_str());
         if (!ifs)
         {
             cout << "can not open config file: " << config_file << "\n";
-            //return 0;
+            // return 0;
         }
         else
         {
@@ -151,131 +231,94 @@ int cBarge::SetProgOptions(struct rohanContext& rSes, int argc, char * argv[])
                  << vm["input-file"].as< vector<string> >() << "\n";
         }
 	
-		if (vm.count("config"))
-        {
-            cout << "Config files are: ";
-            cout << vm["config"].as<string>() << "\n";
-        }
+		//if (vm.count("config"))
+		//{
+		//	cout << "Config files are: ";
+		//	cout << vm["config"].as<string>() << "\n";
+		//}
 
 		if (vm.count("network"))
         {
-            cout << "Network architecture is: ";
-            cout << vm["network"].as<string>() << "\n";
-			++iReturn;
+            //cout << "Network architecture is: ";
+            //cout << vm["network"].as<string>() << "\n";
         }
-		else cout << "No network specified!\n";
+		else {
+			cout << "No network specified!\n";
+			return 0;
+		}
 
 		if (vm.count("samples"))
         {
-            cout << "Samples file is : ";
-			cout << vm["samples"].as<string>() << "\n";
-			++iReturn;
-        }
-		else cout << "No samples specified!\n";
+            //cout << "Samples file is : ";
+			//cout << vm["samples"].as<string>() << "\n";
+		}
+		else {
+			cout << "No samples specified!\n";
+			return 0;
+		}
 
-		if (vm.count("weights"))
-        {
-			cout << "Weights file is : ";
-			cout << vm["weights"].as<string>() << "\n";
-        }
-		else cout << "No weights specified.\n";
-
-		if (vm.count("learn"))
-        {
-			cout << "Learn directive is : ";
-			cout << vm["learn"].as<string>() << "\n";
-        }
-
-		//if (vm.count("eval"))
+		//if (vm.count("weights"))
   //      {
-		//	cout << "Eval directive is : ";
-		//	cout << vm["eval"].as<string>() << "\n";
-        //}
+		//	//cout << "Weights file is : ";
+		//	//cout << vm["weights"].as<string>() << "\n";
+  //      }
+		//else cout << "No weights specified, default to random values.\n";
+
+		if (vm.count("eval") || vm.count("learn"))
+		{
+			iReturn=1;
+		}
+		else {
+			cout << "No directives given.\n";
+			++rSes.iWarnings;
+		}
 
 	}
     catch(exception& e) {
         cerr << "error: " << e.what() << "\n";
-        return -1;
+		++rSes.iErrors;
+        return 0;
     }
     catch(...) {
         cerr << "Exception of unknown type!\n";
-		return -1;
+		++rSes.iErrors;
+		return 0;
     }
 
     return iReturn;
 }
 
 
-char cBarge::sep_to_space(char c){
-  return c == ',' || c == '<' || c == '>' ? ' ' : c;
-}
+int cBarge::BeginLogging(struct rohanContext& rSes)
+{mIDfunc /// Prepares logging activities
+	int iReturn=1;
+	char sLog[255], sPath[MAX_PATH], sHanPath[MAX_PATH];
 
-void cBarge::ResetContext(struct rohanContext& rSes)
-{mIDfunc /// sets initial and default value for globals and settings
-
-	// ERRORS and progress tracking
-	gTrace=0; 
-	gDebugLvl=0; 
-	rSes.iWarnings=0; rSes.iErrors=0; 
-	rSes.lSampleQtyReq=0;
-	rSes.lMemStructAlloc=0;
-	// eval related
-	rSes.iSaveInputs=0 /* include inputs when saving evaluations */;
-	rSes.iSaveOutputs=0 /* include desired outputs when saving evaluations */;
-	rSes.iSaveSampleIndex=0 /* includes sample serials when saving evaluations */;
-	rSes.iOutputFocus=1 /*! which output is under consideration (0=all) */;
-	rSes.iEvalBlocks=128; 
-	rSes.iEvalThreads=128; 
-
-}
-
-int cBarge::ObtainGlobalSettings(struct rohanContext& rSes)
-{mIDfunc /// sets initial and default value for globals and settings
-	int iReturn=1; string s;
-	char sLog[255];
-
-	ResetContext(rSes);
-
-	// input handling
-	rSes.iEvalMode=0;
-	rSes.bConsoleUsed=false;
-	rSes.bRInJMode=false; 
-	rSes.bRMSEon=true; 
-	strcpy( rSes.sLearnSet, vm["samples"].as<string>().c_str() );
-	strcpy( rSes.sWeightSet, vm["weights"].as<string>().c_str() );
-	// learning related
-	rSes.lSamplesTrainable=-1;
-	rSes.iOutputFocus=1;
-	rSes.iBpropBlocks=1; 
-	rSes.iBpropThreads=256; 
-	rSes.dHostRMSE=0.0;
-	rSes.dDevRMSE=0.0;
-	rSes.dRMSE=0.0;
-	rSes.dTargetRMSE=0.0;
-	rSes.dMAX=0.0;
-	rSes.iEpochLength=1000; 
-	// network
-	GetNetworkOpt(rSes);
-	rSes.iLayerQty = (rSes.iFirstHiddenSize ? 1:0) + (rSes.iSecondHiddenSize ? 1:0) + 1;
-	// record keeping, including tag
-	char sPath[MAX_PATH], sHanPath[MAX_PATH];
-	GetUserDocPath(sPath); // sPath now has "C:\users\documents"
-	sprintf(rSes.sRohanVerPath, "%s\\Rohan-%s", sPath, VERSION); // .sRohanVerPath has "C:\users\documents\Rohan_0.9.3"
-	strcpy( rSes.sSesName, vm["tag"].as<string>().c_str() );
+	SetVerPath(rSes);
+	strcpy( rSes.sSesName, vm["tag"].as<string>().c_str() ); // tag has default value, so it can always be called upon
 	if(DirectoryEnsure(rSes.sRohanVerPath)){
-
 		using namespace boost::posix_time; 
 		ptime now = second_clock::local_time(); //use the clock
 		// establish Rlog
 		sprintf(sPath, "%s\\RohanLog.txt", rSes.sRohanVerPath); // sPath has full rlog pathname
 		rSes.ofsRLog=new ofstream(sPath, std::ios::app|std::ios::out); 
-		*(rSes.ofsRLog) << "\tSTART Rohan v" << VERSION << " Neural Network Simulator\n";
+		*(rSes.ofsRLog) << "\tSTART Rohan v" << VERSION << " Neural Network Simulator - " << AUTHORCREDIT << "\n";
 		// establish .han file 
 		sprintf( sHanPath, "%s\\%s.han", rSes.sRohanVerPath, rSes.sSesName); //sHanPath has fill hanlog pathname
 		rSes.ofsHanLog=new ofstream(sHanPath, std::ios::out); 
 		//rSes.ofsHanLog=new ofstream(sHanPath, std::ios::app|std::ios::out); 
-		*(rSes.ofsHanLog) << "#\t" << now << "\tSTART Rohan v" << VERSION << " Neural Network Simulator\n";
-		*(rSes.ofsHanLog) << "#\t" << now << AUTHORCREDIT << "\n";
+		*(rSes.ofsHanLog) << "#\t" << now << "\tSTART Rohan v" << VERSION << " Neural Network Simulator - " << AUTHORCREDIT << "\n";
+		rSes.iLoggingEnabled=true;
+		RLog(rSes, USERF, "Logging initiated");
+		RLog(rSes, USERF, __FUNCTION__);
+		{
+			sprintf(sLog, " using %s\\", rSes.sRohanVerPath);
+			RLog(rSes, USERF+ADMINF, sLog);
+			sprintf(sLog, " using %s", vm["config"].as<string>().c_str() );
+			RLog(rSes, USERF+ADMINF, sLog);
+			sprintf(sLog, " begining session %s", rSes.sSesName);
+			RLog(rSes, USERF+ADMINF, sLog);
+		}
 #ifdef _DEBUG
 		// establish bucket files
 		//AsciiFileHandleWrite(rSes.sRohanVerPath, "DevBucket.txt", &(rSes.deviceBucket));
@@ -287,49 +330,95 @@ int cBarge::ObtainGlobalSettings(struct rohanContext& rSes)
 	else {
 		sprintf(sLog, "Directory %s could not be created", rSes.sRohanVerPath); RLog(rSes, USERF+ERRORF, sLog);
 	}
-	// samples
-	rSes.lSampleQty=0; // no samples loaded yet
-	rSes.lSampleQtyReq=-1; // no samples loaded yet
-	//rSes.iInputQty // part of network above
-	//rSes.iOutputQty // part of network above
-
-	// LEARNING SET
-	//int iEvalMode /*! Defaults to discrete outputs but a value of 0 denotes Continuous outputs. */;
-	rSes.rLearn->lSampleQty=0;
-	rSes.rLearn->iValuesPerLine=0;
-	rSes.rLearn->iInputQty=rSes.iInputQty;
-	rSes.rLearn->iOutputQty=rSes.iOutputQty;
-	//rohanSample *rSample /*! Array of rohanSample structures. */; //removed 10/24/11
-	//FILE *fileInput /*! The filehandle used for reading the learning set from the given file-like object. */; 
-	rSes.rLearn->bContInputs=false; //default
-	rSes.rLearn->iContOutputs=false; //default
-	rSes.rLearn->lSampleIdxReq=-1;
-	//void* hostLearnPtr;
-	
-	// hardware related
-		if (Team->CUDAverify(rSes)>=2.0){ // assigns .dMasterCalcVer, .deviceProp.major, .deviceCount
-			cutilSafeCall( cudaSetDevice(rSes.iMasterCalcHw) ); /// all cuda calls to run on first device of highest compute capability device located
-			if (gDebugLvl) cout << "CUDA present, device " << rSes.iMasterCalcHw << " selected." << endl;
-		}
-		else {
-			if (rSes.dMasterCalcVer>1.0)
-				fprintf(stderr, "Warning: CUDA hardware below Compute Capability 2.0.\n");
-			else
-				fprintf(stderr, "Warning: No CUDA hardware or no CUDA functions present.\n");
-			rSes.iMasterCalcHw=-1;
-			++rSes.iWarnings;
-			iReturn=0;
-		}
 
 	return iReturn;
 }
 
-int cBarge::GetNetworkOpt(struct rohanContext& rSes)
+int cBarge::GetTagOpt(struct rohanContext& rSes)
+{mIDfunc///parses tag program_option 
+	int iReturn=1;
+//# the tag value is a name used to identify the files Rohan generates during a session. Rohan's reply will be NahorNahor.han, reports will be NahorNahor937Evals.txt, etc.
+//tag=NahorNahor
+	// tag has default value, so it can always be called upon
+	strcpy( rSes.sSesName, vm["tag"].as<string>().c_str() ); 
+	
+	return iReturn;
+}
+
+int cBarge::GetEvalOpt(struct rohanContext& rSes)
+{mIDfunc///parses eval directive program_option 
+	int iReturn=1; vector<int> v; char sLog[255];
+//# eval's value specification is <1/0 for including sample numbers, 1/0 for sample input values, 1/0 for sample output values, # of samples to include in evaluation/prediction>
+//eval=<1,1,1,10000>
+	if(VectorFromOption("eval", v, 4) ) {
+		rSes.iSaveSampleIndex = v.at(0);
+		rSes.iSaveInputs = v.at(1);
+		rSes.iSaveOutputs = v.at(2);
+		rSes.lSampleQtyReq = v.at(3);
+	// other activities at cDrover::DoEvalOpt
+		RLog(rSes, USERF, __FUNCTION__);
+	}
+	else{
+		RLog(rSes, GUIF, "eval=fail");
+		sprintf(sLog, "bad eval directive: %s", vm["eval"].as<string>().c_str());
+		RLog(rSes, WARNINGF, sLog);
+	}
+	return iReturn;
+}
+
+int cBarge::GetSamplesOpt(struct rohanContext& rSes)
+{mIDfunc///parses samples specification program_option 
+	int iReturn=1;
+//# samples' value specification = name of the text file that contains the comma, tab, or space delimited lines of samples
+//samples=AirplanePsDN1W3S10k.txt
+	if (vm.count("samples"))
+		strcpy( rSes.sLearnSet, vm["samples"].as<string>().c_str() );
+	RLog(rSes, USERF, __FUNCTION__);
+	return iReturn;
+} 
+
+int cBarge::GetWeightsOpt(struct rohanContext& rSes)
+{mIDfunc///parses weights specification program_option 
+	int iReturn=1;
+//# weights' value  specification = name of the file that contains the binary representation of the neural weights
+//weights=AirplanePsDN1W3S10kRMSE876.wgt
+	if (vm.count("weights"))
+        strcpy( rSes.sWeightSet, vm["weights"].as<string>().c_str() );
+	else 
+		cout << "No weights specified, default to random values.\n";
+	RLog(rSes, USERF, __FUNCTION__);
+	return iReturn;
+}
+
+int cBarge::GetLearnOpt(struct rohanContext& rSes)
+{mIDfunc///parses learn directive program_option 
+	int iReturn=1; vector<double> v; char sLog[255];
+//# learn's value specification is < target RMSE, MAX, # of samples used, warp factor > Warp 1 is always safe, use other values at your own risk!!
+//learn=<9.5,10,10000,1>
+	if(VectorFromOption("learn", v, 4) ){ // all params present, hopefully valid
+		rSes.dTargetRMSE = v.at(0);
+		rSes.dMAX = v.at(1);
+		rSes.lSampleQtyReq = (int)v.at(2);
+		rSes.iBpropThreads = (int)v.at(3) * 32; // Warp factor 1, Mr Sulu!
+		// other activities at cDrover::DoLearnOpt
+	}
+	else{ // missing or extra parameters
+		RLog(rSes, GUIF, "learn=fail");
+		sprintf(sLog, "bad learn directive: %s", vm["learn"].as<string>().c_str());
+		RLog(rSes, WARNINGF, sLog);
+	}
+	RLog(rSes, USERF, __FUNCTION__);
+	return iReturn;
+}
+
+
+int cBarge::GetNetworkOpt(struct rohanContext& rSes, struct rohanNetwork& rNet)
 {mIDfunc///parses network specification program_option 
 	char sLog[255];
 	rSes.iContActivation=true; //rSes.rNet->iContActivation=true; 
 	vector<int> v;
-
+//# network's value specification is < # sectors, # inputs, size of first hidden layer or 0, size of second hidden layer or 0, # of outputs >
+//network=<384,9,36,0,1>
 	if(VectorFromOption("network", v, 5)){
 		rSes.iSectorQty = v.at(0);
 		rSes.iInputQty = v.at(1);
@@ -348,6 +437,7 @@ int cBarge::GetNetworkOpt(struct rohanContext& rSes)
 			rSes.iFirstHiddenSize = v.at(2);
 			rSes.iSecondHiddenSize = 0;
 			rSes.iOutputQty = v.at(4);
+			//printf(":%d, %d, %d:", rSes.iFirstHiddenSize, rSes.iSecondHiddenSize, rSes.iOutputQty);
 		}
 		if( v.at(2) && !v.at(3) && !v.at(4) ){ // 384, 9, 36, 0, 0
 			rSes.iFirstHiddenSize = v.at(2);
@@ -374,15 +464,12 @@ int cBarge::GetNetworkOpt(struct rohanContext& rSes)
 			rSes.iSecondHiddenSize = 0;
 			rSes.iOutputQty = 1;
 		}
-
-		// NETWORK STRUCT
-		rSes.rNet->iSectorQty=rSes.iSectorQty; // 4
-		rSes.rNet->kdiv2=rSes.iSectorQty/2; 
-		rSes.rNet->iLayerQTY=rSes.iLayerQty+1; // 4
-		rSes.rNet->iContActivation=rSes.iContActivation;
-		rSes.rNet->dK_DIV_TWO_PI=rSes.iSectorQty/TWO_PI;
-		rSes.rNet->two_pi_div_sect_qty=TWO_PI/rSes.iSectorQty; // 8
-
+		rSes.iLayerQty = (rSes.iFirstHiddenSize ? 1:0) + (rSes.iSecondHiddenSize ? 1:0) + 1;
+		if(rSes.iLayerQty==1)sprintf(rSes.sNetString, "%d.%d (%d)", rSes.iInputQty, rSes.iOutputQty, rSes.iSectorQty);
+		if(rSes.iLayerQty==2)sprintf(rSes.sNetString, "%d.%d.%d (%d)", rSes.iInputQty, rSes.iFirstHiddenSize, rSes.iOutputQty, rSes.iSectorQty);
+		if(rSes.iLayerQty==3)sprintf(rSes.sNetString, "%d.%d.%d.%d (%d)", rSes.iInputQty, rSes.iFirstHiddenSize, rSes.iSecondHiddenSize, rSes.iOutputQty, rSes.iSectorQty);
+	
+	RLog(rSes, USERF, __FUNCTION__);
 		return true;
 	}
 	else{
@@ -393,23 +480,167 @@ int cBarge::GetNetworkOpt(struct rohanContext& rSes)
 	}
 }
 
+void cBarge::GetOptions(struct rohanContext& rSes, struct rohanNetwork& rNet, struct rohanLearningSet& rLearn)
+{mIDfunc// Get*Opt functions should only update rSes members according to vm values
+	GetNetworkOpt(rSes, *rSes.rNet); // needs to change
+	GetEvalOpt(rSes);
+	GetSamplesOpt(rSes);
+	GetWeightsOpt(rSes);
+	GetLearnOpt(rSes);
+}
+
+int cBarge::GetHdweSet(struct rohanContext& rSes)
+{mIDfunc///parses eval directive program_option 
+	int iReturn=1;
+
+		if (Team->CUDAverify(rSes)>=2.0){ // assigns .dMasterCalcVer, .deviceProp.major, .deviceCount
+			cutilSafeCall( cudaSetDevice(rSes.iMasterCalcHw) ); /// all cuda calls to run on first device of highest compute capability device located
+			if (gDebugLvl) cout << "CUDA present, device " << rSes.iMasterCalcHw << " selected." << endl;
+		}
+		else {
+			if (rSes.dMasterCalcVer>1.0)
+				fprintf(stderr, "Warning: CUDA hardware below Compute Capability 2.0.\n");
+			else
+				fprintf(stderr, "Warning: No CUDA hardware or no CUDA functions present.\n");
+			rSes.iMasterCalcHw=-1;
+			++rSes.iWarnings;
+			iReturn=0;
+		}
+	RLog(rSes, USERF, __FUNCTION__);
+
+	return iReturn;
+}
+
+void cBarge::PrepareContext(struct rohanContext& rSes)
+{mIDfunc
+	GetHdweSet(rSes);
+
+}
+
+void cBarge::PrepareNetSettings(struct rohanContext& rSes, struct rohanNetwork& rNet)
+{mIDfunc
+	//char sLog[255];
+
+		// NETWORK STRUCT
+		rNet.iSectorQty=rSes.iSectorQty;
+		rNet.kdiv2=rSes.iSectorQty/2; 
+		//rNet.iLayerQTY=rSes.iLayerQty+1;
+		rNet.iContActivation=rSes.iContActivation;
+		rNet.dK_DIV_TWO_PI=rSes.iSectorQty/TWO_PI;
+		rNet.two_pi_div_sect_qty=TWO_PI/rSes.iSectorQty;
+		rNet.iLayerQTY = (rSes.iFirstHiddenSize ? 1:0) + (rSes.iSecondHiddenSize ? 1:0) + 2;
+		// polylayer model
+		//rSes.rNet->rLayer=(struct rohanLayer*)malloc(rSes.rNet->iLayerQTY * sizeof (struct rohanLayer)); //point to array of layers
+		//	mCheckMallocWorked(rSes.rNet->rLayer)
+		//if(rSes.iLayerQty==1){
+		//	rSes.rNet->rLayer[1].iNeuronQty = rSes.iOutputQty;
+		//	rSes.rNet->rLayer[1].iDendriteQty=rSes.iInputQty;
+		//	rSes.rNet->rLayer[0].iNeuronQty = rSes.iInputQty;
+		//	rSes.rNet->rLayer[0].iDendriteQty=0; // layer zero has no dendrites
+		//}
+		//if(rSes.iLayerQty==2){
+		//	rSes.rNet->rLayer[2].iNeuronQty = rSes.iOutputQty;
+		//	rSes.rNet->rLayer[2].iDendriteQty=rSes.iFirstHiddenSize;
+		//	rSes.rNet->rLayer[1].iNeuronQty = rSes.iFirstHiddenSize;
+		//	rSes.rNet->rLayer[1].iDendriteQty=rSes.iInputQty;
+		//	rSes.rNet->rLayer[0].iNeuronQty = rSes.iInputQty;
+		//	rSes.rNet->rLayer[0].iDendriteQty=0; // layer zero has no dendrites
+		//}
+		//if(rSes.iLayerQty==3){
+		//	rSes.rNet->rLayer[3].iNeuronQty = rSes.iOutputQty;
+		//	rSes.rNet->rLayer[3].iDendriteQty=rSes.iSecondHiddenSize;
+		//	rSes.rNet->rLayer[2].iNeuronQty = rSes.iSecondHiddenSize;
+		//	rSes.rNet->rLayer[2].iDendriteQty=rSes.iFirstHiddenSize;
+		//	rSes.rNet->rLayer[1].iNeuronQty = rSes.iFirstHiddenSize;
+		//	rSes.rNet->rLayer[1].iDendriteQty=rSes.iInputQty;
+		//	rSes.rNet->rLayer[0].iNeuronQty = rSes.iInputQty;
+		//	rSes.rNet->rLayer[0].iDendriteQty=0; // layer zero has no dendrites
+		//}
+		// fixed layer model
+		if(rSes.iLayerQty==1){
+			rNet.OutputLayer.iNeuronQty = rSes.iOutputQty;
+			rNet.OutputLayer.iDendriteQty=rSes.iInputQty;
+			rNet.InputLayer.iNeuronQty = rSes.iInputQty;
+			rNet.InputLayer.iDendriteQty=0; // layer zero has no dendrites
+		}
+		if(rSes.iLayerQty==2){
+			rNet.OutputLayer.iNeuronQty = rSes.iOutputQty;
+			rNet.OutputLayer.iDendriteQty=rSes.iFirstHiddenSize;
+			rNet.FirstHiddenLayer.iNeuronQty = rSes.iFirstHiddenSize;
+			rNet.FirstHiddenLayer.iDendriteQty=rSes.iInputQty;
+			rNet.InputLayer.iNeuronQty = rSes.iInputQty;
+			rNet.InputLayer.iDendriteQty=0; // layer zero has no dendrites
+		}
+		if(rSes.iLayerQty==3){
+			rNet.OutputLayer.iNeuronQty = rSes.iOutputQty;
+			rNet.OutputLayer.iDendriteQty=rSes.iSecondHiddenSize;
+			rNet.SecondHiddenLayer.iNeuronQty = rSes.iSecondHiddenSize;
+			rNet.SecondHiddenLayer.iDendriteQty=rSes.iFirstHiddenSize;
+			rNet.FirstHiddenLayer.iNeuronQty = rSes.iFirstHiddenSize;
+			rNet.FirstHiddenLayer.iDendriteQty=rSes.iInputQty;
+			rNet.InputLayer.iNeuronQty = rSes.iInputQty;
+			rNet.InputLayer.iDendriteQty=0; // layer zero has no dendrites
+		}
+		// block model?
+	//sprintf(sLog, "%s: rLearn.iInputQty=%d, .iOutputQty=%d", __FUNCTION__, rLearn.iInputQty, rLearn.iOutputQty);
+	//RLog(rSes, USERF, sLog);
+}
+
+void cBarge::PrepareLearnSettings(struct rohanContext& rSes, struct rohanLearningSet& rLearn)
+{mIDfunc
+	char sLog[255];
+	rLearn.iInputQty=rSes.iInputQty;
+	rLearn.iOutputQty=rSes.iOutputQty;
+	sprintf(sLog, "%s: rLearn.iInputQty=%d, .iOutputQty=%d", __FUNCTION__, rLearn.iInputQty, rLearn.iOutputQty);
+	RLog(rSes, USERF, sLog);
+}
+
+int cBarge::PrepareAllSettings(struct rohanContext& rSes)
+{mIDfunc /// sets initial and default value for globals and settings
+	int iReturn=1; string s;
+
+	// ERRORS and progress tracking
+	ResetSettings(rSes, *rSes.rNet, *rSes.rLearn);
+	if (!SetProgOptions( rSes, rSes.argc, rSes.argv ))
+		return 0;
+	// Get*Opt functions should only update rSes members according to vm values
+	GetTagOpt(rSes);
+	if (!BeginLogging(rSes))
+		return 0;
+	GetOptions(rSes, *rSes.rNet, *rSes.rLearn);
+	
+	// further setting modification begins here
+	PrepareContext(rSes);
+	PrepareNetSettings(rSes, *rSes.rNet);
+	PrepareLearnSettings(rSes, *rSes.rLearn);
+
+	RLog(rSes, USERF, __FUNCTION__);
+	return iReturn;
+}
+
 int cBarge::ObtainSampleSet(struct rohanContext& rSes)
 {mIDfunc /// loads the learning set to be worked with Ante-Loop
 	try{
 		int iReturn=0; char sLog[255];
 		FILE *fileInput;
 		// File handle for input
-		iReturn=AsciiFileHandleRead(rSes.sLearnSet, &fileInput);
-		if (iReturn==0) // unable to open file
-			++rSes.iErrors;
+		iReturn=AsciiFileHandleRead(rSes, rSes.sLearnSet, &fileInput);
+		if (iReturn==0) {// unable to open file
+			sprintf(sLog, "Unable to open \"%s\" for reading", rSes.sLearnSet);
+			RLog(rSes, ERRORF, sLog);
+			return 0;
+		}	
 		else{ // file opened normally
 			// file opening and reading are separated to allow for streams to be added later
 			int lLinesRead=DoLoadSampleSet(rSes, fileInput);
 			if (lLinesRead) {
-				sprintf(sLog, "Parsed %d lines from %s\nStored %d samples, %d input values, %d output values each.\n", 
-					lLinesRead, rSes.sLearnSet, rSes.rLearn->lSampleQty, rSes.rLearn->iInputQty, rSes.rLearn->iOutputQty);
+				sprintf(sLog, "Parsed %d lines from %s", 
+					lLinesRead, rSes.sLearnSet);
 				RLog(rSes, USERF, sLog);
-				//verify samples fall wihtin sector values
+				sprintf(sLog, "Stored %d samples, %d input values, %d output values each.", 
+					rSes.rLearn->lSampleQty, rSes.rLearn->iInputQty, rSes.rLearn->iOutputQty);
+				RLog(rSes, USERF, sLog);
+				//verify samples fall within sector values
 				if(CurateSectorValue(rSes)) {
 					CompleteHostLearningSet(rSes);
 				}
@@ -422,7 +653,7 @@ int cBarge::ObtainSampleSet(struct rohanContext& rSes)
 				iReturn=0;
 			}
 		}
-
+	RLog(rSes, USERF, __FUNCTION__);
 		return iReturn;
 	}
 	catch(exception& e) {
@@ -439,13 +670,14 @@ int cBarge::ObtainSampleSet(struct rohanContext& rSes)
 int cBarge::DoLoadSampleSet(struct rohanContext& rSes, FILE *fileInput)
 {mIDfunc/// pulls in values from .txt files, used for testing before main loop
 	// Returns lines read in (0 = error)
-	char sLog[255];
+	// allocates space for rLearn.dXInputs and .dDOutputs and fills them with parsed, unconveted values
+
+	char sLog[255], *pch, *cSample;
 
 	#define MAX_REC_LEN 65536 /* Maximum size of input buffer */
 
 	int  lLinesQty=0,lMaxLines=256; /* countable number of lines, number of lines with memory allocation */
 	char cThisLine[MAX_REC_LEN]; /* Contents of current line */
-	int iArchLineIdx; // The line number that has the sample qty in it
 	rSes.rLearn->iValuesPerLine=0; rSes.rLearn->lSampleQty=0;
 	// reset quantities for counting later
 	char **cLines = (char **)malloc(256 * sizeof (char *));
@@ -473,45 +705,67 @@ int cBarge::DoLoadSampleSet(struct rohanContext& rSes, FILE *fileInput)
 	// this should be a shrinking, and should never fail.
 	cLines = (char **)realloc(cLines, lLinesQty * sizeof (char*));
 		mCheckMallocWorked(cLines)
-	// 0 means ContActivation
+	double A, B, C; char cToken[255]; int lCurrentLine=0;
+	// 0 means Continuous sample values
 	// 1 means discrete, and values of 2+ indicate parameter has been omitted,
 	// defaulting to discrete, and value is actually # of samples in file
-	rSes.iEvalMode=atof(cLines[0])>1 ? 1 : 0; iArchLineIdx = 1 - rSes.iEvalMode;
-	if (rSes.iEvalMode) 
-		RLog(rSes, 0, "Discrete output values indicated.");
-	else 
-		RLog(rSes, 0, "Continuous output values indicated.");
+	// rSes.iReadMode=atof(cLines[0]);
+	A=atof(cLines[0]);
+	C=atof(cLines[1]);
+	if(TokenCounter(cLines[0], " ,\t")>1){ // more than one value on first line ?
 
-	char *sArch, *tok;
+		GetNthToken(cLines[0], " ,\t", cToken, 2);
+		B=atof(cToken);
 
-	sArch = _strdup(cLines[iArchLineIdx]); // make a sacrificial copy
-	tok = strtok(sArch, " ,\t");
-	//  condiitonal eliminated after move to config files and cli args - 6/27/12
-	//if (sArch==NULL) // no additional params present
-	//	printf("No params present; fetch from config file or command line (not yet supported XX).\n");
-	//else {
-		cuMakeArchValues(cLines[iArchLineIdx], rSes);
-		rSes.rLearn->iInputQty=rSes.rNet->rLayer[0].iNeuronQty;
-		rSes.rLearn->iOutputQty=rSes.rNet->rLayer[rSes.rNet->iLayerQTY-1].iNeuronQty;
-		sprintf(sLog, "%d inputs, %d output(s) specified.\n", rSes.rLearn->iInputQty, rSes.rLearn->iOutputQty);
-		RLog(rSes, 0, sLog);
-	//}
-	
-	rSes.rLearn->lSampleQty=rSes.lSampleQtyReq=rSes.lSampleQty=(int)atof(cLines[iArchLineIdx]); //record qty of samples
-	sprintf(sLog, "%d samples specified: ", rSes.rLearn->lSampleQty);
-	RLog(rSes, 0, sLog);
-			
-// Parses lines of text for input values and output value and stores them in dynamic int arrays
-// returns # of inputs per line
-	char *pch; 
-	char  *cSample;
-
-	int lCurrentLine=atof(cLines[0])>1 ? 1 : 2; //find which line the samples begin
-	cSample=_strdup(cLines[2]); // strtok chops up the input string, so we must make a copy
-	pch = strtok (cSample, " ,\t");
-	while (pch != NULL) {// this loop counts the values present in a copy of line 2, which has to be a sample line
-		pch = strtok (NULL, " ,\t"); ++rSes.rLearn->iValuesPerLine;
+		if(A!=floor(A)) { // first value is not an integer, header must have been omitted from a phase file
+			lCurrentLine=0; // samples begin on line 0
+			rSes.rLearn->lSampleQty=rSes.lSampleQtyReq=rSes.lSampleQty=lLinesQty; // set sample qty equal to lines
+			rSes.iReadMode=0; rSes.rLearn->bContInputs=1; rSes.rLearn->iContOutputs=1; // implied sample value continuity recorded
+		}
+		if(A==0) { // first value is 0
+			lCurrentLine=1; // samples begin on line 1
+			rSes.rLearn->lSampleQty=rSes.lSampleQtyReq=rSes.lSampleQty=(int)B; // set sample qty equal to 2nd parameter
+			rSes.iReadMode=0; rSes.rLearn->bContInputs=1; rSes.rLearn->iContOutputs=1; // implied sample value continuity recorded
+		}
+		if(A==1) { // first value is 1
+			lCurrentLine=1; // samples begin on line 1
+			rSes.rLearn->lSampleQty=rSes.lSampleQtyReq=rSes.lSampleQty=(int)B; // set sample qty equal to 2nd parameter
+			rSes.iReadMode=1; rSes.rLearn->bContInputs=0; rSes.rLearn->iContOutputs=0; // implied sample value continuity recorded
+		}
+		if(A>=2) { // first value is 2+
+			lCurrentLine=1; // samples begin on line 1
+			rSes.rLearn->lSampleQty=rSes.lSampleQtyReq=rSes.lSampleQty=(int)A; // set sample qty equal to 1st parameter, others on this line are ignored
+			rSes.iReadMode=1; rSes.rLearn->bContInputs=0; rSes.rLearn->iContOutputs=0; // implied sample value continuity recorded
+		}
+		
 	}
+	else {
+		if(A==0) { // first value is 0
+			lCurrentLine=2; // samples begin on line 2
+			rSes.rLearn->lSampleQty=rSes.lSampleQtyReq=rSes.lSampleQty=(int)C; // set sample qty equal to 1st parameter on 2nd line
+			rSes.iReadMode=0; rSes.rLearn->bContInputs=1; rSes.rLearn->iContOutputs=1; // implied sample value continuity recorded
+		}
+		if(A==1) { // first value is 1
+			lCurrentLine=2; // samples begin on line 2
+			rSes.rLearn->lSampleQty=rSes.lSampleQtyReq=rSes.lSampleQty=(int)C; // set sample qty equal to 1st parameter on 2nd line
+			rSes.iReadMode=1; rSes.rLearn->bContInputs=0; rSes.rLearn->iContOutputs=0; // implied sample value continuity recorded
+		}
+		if(A>=2) { // first value is 2+
+			lCurrentLine=1; // samples begin on line 1
+			rSes.rLearn->lSampleQty=rSes.lSampleQtyReq=rSes.lSampleQty=(int)A; // set sample qty equal to 1st parameter
+			rSes.iReadMode=1; rSes.rLearn->bContInputs=0; rSes.rLearn->iContOutputs=0; // implied sample value continuity recorded
+		}
+	}
+	sprintf(sLog, "%d read mode specified: \"%s\"", rSes.rLearn->lSampleQty, cLines[0]);
+	sprintf(sLog, "%d samples specified: \"%s\"", rSes.rLearn->lSampleQty, cLines[1]);
+	RLog(rSes, 0, sLog);
+
+	// Parses lines of text for input values and output value and stores them in dynamic int arrays
+	// returns # of inputs per line
+	
+	
+	// get # of values per sample line
+	rSes.rLearn->iValuesPerLine=TokenCounter(cLines[2], " ,\t");
 	int iExcessValueQty = rSes.rLearn->iValuesPerLine - (rSes.rLearn->iInputQty + rSes.rLearn->iOutputQty );
 	if(iExcessValueQty>0) {
 		sprintf(sLog, "Warning: %d unused values in sample tuples.\n", iExcessValueQty);
@@ -526,8 +780,9 @@ int cBarge::DoLoadSampleSet(struct rohanContext& rSes, FILE *fileInput)
 		mCheckMallocWorked(rSes.rLearn->dXInputs)
 	rSes.rLearn->dDOutputs=(double*)malloc( (rSes.rLearn->iOutputQty+1) * rSes.rLearn->lSampleQty * sizeof(double)); // scalar D correct output signal
 		mCheckMallocWorked(rSes.rLearn->dDOutputs)
-		rSes.lMemStructAlloc = rSes.lMemStructAlloc || RLEARNd; // flag existence of alllocation
+		rSes.lMemStructAlloc = rSes.lMemStructAlloc | RLEARNd; // flag existence of alllocation
 	
+	cSample=_strdup(cLines[lCurrentLine+rSes.rLearn->lSampleQty-1]);
 	for (int s=0; s<rSes.rLearn->lSampleQty; ++s){ //iterate over the number of samples and malloc
 		for (int k=0; k<=rSes.rLearn->iInputQty; ++k) // fill with uniform, bogus values
 			//#define IDX2C( i, j, ld) ((i)+(( j )*( ld )))
@@ -536,7 +791,7 @@ int cBarge::DoLoadSampleSet(struct rohanContext& rSes, FILE *fileInput)
 			rSes.rLearn->dDOutputs[ IDX2C( k, s, rSes.rLearn->iOutputQty+1 ) ]=-888.8; 
 		// parse and store sample values
 		pch = strtok (cLines[lCurrentLine], " ,\t"); // get the first token on a line
-		//fprintf(fShow, "%d: ", s);
+		// bRINJ mode not supported yet XX
 		//if(rSes.bRInJMode){ // if flag for compatibility with older NN simulator is set XX
 		//	for (int k=rSes.rLearn->iValuesPerLine; k>=1; --k){ // save it beginning with last position
 		//		rSes.rLearn->dXInputs[ IDX2C( s, k, rSes.rLearn->iInputQty+1 ) ]=atof(pch); // convert and assign each value in a line
@@ -558,11 +813,14 @@ int cBarge::DoLoadSampleSet(struct rohanContext& rSes, FILE *fileInput)
 		free(cLines[lCurrentLine]);
 		++lCurrentLine;
 	}
-	
+	sprintf(sLog, "Last tuple read from line %d: \"%s\"", lCurrentLine, cSample);
+	RLog(rSes, 0, sLog);
+
 	free(cLines[0]);
-	if (iArchLineIdx) free(cLines[1]); // WEIRD MEMORY ERRORS? LOOK HERE XX
+	//if (iArchLineIdx) free(cLines[1]); // WEIRD MEMORY ERRORS? LOOK HERE XX
 	// above line avoids double-freeing cLines[1] if it was used for a sample instead of the sample qty
 	free(cLines);
+	RLog(rSes, USERF, __FUNCTION__);
  	return lLinesQty; // returns qty of lines read from file, not the same as quantity of samples
 }
 
@@ -576,7 +834,7 @@ int cBarge::CurateSectorValue(struct rohanContext& rSes)
 		for (int i=0; i<=rSes.rLearn->iInputQty; ++i){
 			if(rSes.rLearn->dXInputs[ IDX2C( i, s, rSes.rLearn->iInputQty+1 )]>=rSes.rNet->iSectorQty){
 				// if any input values fall beyond the maximum sector value, alert and make recommendation
-				sprintf(sLog, "Error: Sample #%d has value that exceeds sector qty %d; suggest increasing to %d!\n",
+				sprintf(sLog, "Error: Sample #%d has value that exceeds sector qty %d; suggest increasing to %d!",
 					s, rSes.rNet->iSectorQty, static_cast<int>(floor(rSes.rLearn->dXInputs[ IDX2C( i, s, rSes.rLearn->iInputQty+1 ) ]*1.33)+1));
 				RLog(rSes, ERRORF, sLog);
 				++iOverK;
@@ -585,13 +843,14 @@ int cBarge::CurateSectorValue(struct rohanContext& rSes)
 		for (int i=0; i<=rSes.rLearn->iOutputQty; ++i){ // now loop over output values
 			if(rSes.rLearn->dDOutputs[ IDX2C( i, s, rSes.rLearn->iOutputQty+1 )]>=rSes.rNet->iSectorQty){
 				// if any output values fall beyond the maximum sector value, alert and make recommendation
-				sprintf(sLog, "Error: Sample #%d has value that exceeds sector qty %d; suggest increasing to %d!\n",
+				sprintf(sLog, "Error: Sample #%d has value that exceeds sector qty %d; suggest increasing to %d!",
 					s, rSes.rNet->iSectorQty, static_cast<int>(floor(rSes.rLearn->dDOutputs[ IDX2C( i, s, rSes.rLearn->iOutputQty+1 ) ]*1.33)+1));
 				RLog(rSes, ERRORF, sLog);
 				++iOverK;
 			}
 		}
 	}
+	RLog(rSes, USERF, __FUNCTION__);
 	if (iOverK)	// any out-of-bounds values are a fatal error
 		return 0;
 	else
@@ -601,6 +860,7 @@ int cBarge::CurateSectorValue(struct rohanContext& rSes)
 
 int cBarge::CompleteHostLearningSet(struct rohanContext& rSes)
 {mIDfunc //allocate and fill arrays of complx values converted from scalar samples, all in host memory
+	// needs to be adapted to multimodel capability ZZ
 	int iReturn=0; char sLog[255];
 	int IQTY, OQTY, INSIZED, OUTSIZED, INSIZECX, OUTSIZECX;
 	
@@ -628,26 +888,49 @@ int cBarge::CompleteHostLearningSet(struct rohanContext& rSes)
 		mCheckMallocWorked(rSes.rLearn->cdcYEval)
 	rSes.rLearn-> cdcAltYEval =(cuDoubleComplex*)malloc( OUTSIZECX ); // cx alt evaluation Y output
 		mCheckMallocWorked(rSes.rLearn->cdcAltYEval)
-		rSes.lMemStructAlloc = rSes.lMemStructAlloc || RLEARNcdc; // flag existence of allocated structs
+		rSes.lMemStructAlloc = rSes.lMemStructAlloc | RLEARNcdc; // flag existence of allocated structs
 
-	for(int S=0;S<rSes.rLearn->lSampleQty; S++){
-		for (int I=0;I< IQTY ; I++){
-			rSes.rLearn-> cdcXInputs [IDX2C( I, S, IQTY )]
-				= ConvScalarCx( rSes, rSes.rLearn-> dXInputs [IDX2C( I, S, IQTY )] ); // convert scalar inputs on host
-		}
-		for (int O=0;O< OQTY ; O++){
-			rSes.rLearn-> dYEval      [IDX2C(  O, S, OQTY )] = S; 
-			rSes.rLearn-> dAltYEval	  [IDX2C(  O, S, OQTY )] = -S;
-			rSes.rLearn-> dSqrErr	  [IDX2C(  O, S, OQTY )] = O;
-			rSes.rLearn-> cdcDOutputs [IDX2C(  O, S, OQTY )]
-				= ConvScalarCx( rSes, rSes.rLearn->dDOutputs[IDX2C(  O, S, OQTY )] ); // convert cx desired outputs
-			rSes.rLearn-> cdcYEval    [IDX2C(  O, S, OQTY )].x = O; 
-			rSes.rLearn-> cdcYEval    [IDX2C(  O, S, OQTY )].y = S; 
-			rSes.rLearn-> cdcAltYEval [IDX2C(  O, S, OQTY )].x = -1*O;
-			rSes.rLearn-> cdcAltYEval [IDX2C(  O, S, OQTY )].y = -1*S;
+	if(rSes.iReadMode==0){
+		for(int S=0;S<rSes.rLearn->lSampleQty; S++){
+			for (int I=0;I< IQTY ; I++){
+				rSes.rLearn-> cdcXInputs [IDX2C( I, S, IQTY )]
+					= ConvPhaseCx( rSes, rSes.rLearn-> dXInputs [IDX2C( I, S, IQTY )] ); // convert scalar inputs on host
+			}
+			for (int O=0;O< OQTY ; O++){
+				rSes.rLearn-> dYEval      [IDX2C(  O, S, OQTY )] = S; 
+				rSes.rLearn-> dAltYEval	  [IDX2C(  O, S, OQTY )] = -S;
+				rSes.rLearn-> dSqrErr	  [IDX2C(  O, S, OQTY )] = O;
+				rSes.rLearn-> cdcDOutputs [IDX2C(  O, S, OQTY )]
+					= ConvPhaseCx( rSes, rSes.rLearn->dDOutputs[IDX2C(  O, S, OQTY )] ); // convert cx desired outputs
+				rSes.rLearn-> cdcYEval    [IDX2C(  O, S, OQTY )].x = O; 
+				rSes.rLearn-> cdcYEval    [IDX2C(  O, S, OQTY )].y = S; 
+				rSes.rLearn-> cdcAltYEval [IDX2C(  O, S, OQTY )].x = -1*O;
+				rSes.rLearn-> cdcAltYEval [IDX2C(  O, S, OQTY )].y = -1*S;
+			}
 		}
 	}
-	sprintf(sLog, "Sample set size = %d\n", 8*3*OUTSIZED + 16*INSIZECX + 16*3*OUTSIZECX); RLog(rSes, 0, sLog);
+	if(rSes.iReadMode==1){
+		for(int S=0;S<rSes.rLearn->lSampleQty; S++){
+			for (int I=0;I< IQTY ; I++){
+				rSes.rLearn-> cdcXInputs [IDX2C( I, S, IQTY )]
+					= ConvSectorCx( rSes, rSes.rLearn-> dXInputs [IDX2C( I, S, IQTY )] ); // convert scalar inputs on host
+			}
+			for (int O=0;O< OQTY ; O++){
+				rSes.rLearn-> dYEval      [IDX2C(  O, S, OQTY )] = S; 
+				rSes.rLearn-> dAltYEval	  [IDX2C(  O, S, OQTY )] = -S;
+				rSes.rLearn-> dSqrErr	  [IDX2C(  O, S, OQTY )] = O;
+				rSes.rLearn-> cdcDOutputs [IDX2C(  O, S, OQTY )]
+					= ConvSectorCx( rSes, rSes.rLearn->dDOutputs[IDX2C(  O, S, OQTY )] ); // convert cx desired outputs
+				rSes.rLearn-> cdcYEval    [IDX2C(  O, S, OQTY )].x = O; 
+				rSes.rLearn-> cdcYEval    [IDX2C(  O, S, OQTY )].y = S; 
+				rSes.rLearn-> cdcAltYEval [IDX2C(  O, S, OQTY )].x = -1*O;
+				rSes.rLearn-> cdcAltYEval [IDX2C(  O, S, OQTY )].y = -1*S;
+			}
+		}
+}
+	sprintf(sLog, "Sample set size = %d\n", 8*3*OUTSIZED + 16*INSIZECX + 16*3*OUTSIZECX);
+	RLog(rSes, USERF, sLog);
+	RLog(rSes, USERF, __FUNCTION__);
 	
 	return iReturn;
 }
@@ -657,9 +940,13 @@ int cBarge::DoPrepareNetwork(struct rohanContext& rSes)
 {mIDfunc /// sets up network poperties and data structures for use
 	int iReturn=0; char sLog[255];
 	// on with it
-	
+
+					cuMakeArchValues(rSes, *rSes.rNet);
+					//rSes.rLearn->iInputQty=rSes.rNet->rLayer[0].iNeuronQty;
+					//rSes.rLearn->iOutputQty=rSes.rNet->rLayer[rSes.rNet->iLayerQTY-1].iNeuronQty;
+
 	cuMakeNNStructures(rSes); // allocates memory and populates network structural arrays
-	iReturn=BinaryFileHandleRead(rSes.sWeightSet, &rSes.rNet->fileInput);
+	iReturn=BinaryFileHandleRead(rSes, rSes.sWeightSet, &rSes.rNet->fileInput);
 	// file opening and reading are separated to allow for streams to be added later
 	if (iReturn) {
 		int lWeightsRead=cuNNLoadWeights(rSes, rSes.rNet->fileInput);
@@ -760,6 +1047,7 @@ int cBarge::DoPrepareNetwork(struct rohanContext& rSes)
 	if (iReturn==0) {
 		RLog(rSes, ERRORF, "Out of Memory in cuSectorTableMake");
 	}
+	RLog(rSes, USERF, __FUNCTION__);
 	return iReturn;
 }
 
@@ -799,60 +1087,31 @@ int cBarge::cuMakeLayers(int iInputQty, char *sLayerSizes, struct rohanContext& 
 	}
 	if (cuMakeNNStructures(rSes)) 
 		RLog(rSes, 0, "Nodes allocated.");
+	RLog(rSes, USERF, __FUNCTION__);
 	return rSes.rNet->rLayer[rSes.rNet->iLayerQTY-1].iNeuronQty;
 }
 
 
 
-int cBarge::cuMakeArchValues(char *sMLMVNarch, struct rohanContext& rSes)
+int cBarge::cuMakeArchValues(struct rohanContext& rSes, struct rohanNetwork& rNet)
 {mIDfunc/// [No longer parses] a string to assign network architecture parameters for use by later functions. [now uses program_options 6/27/12]
 /// Returns neurons in last layer if successful, otherwise 0
-	char sLog[255];
-	//char *sArchDup, *sDummy;
-	//sArchDup = _strdup(sMLMVNarch); // strtok chops up the input string, so we must make a copy (or do we? - 6/15/10) (yes we do 8/22/10)
-	//sDummy = strtok(sArchDup, " ,\t"); // first value is always # of samples, to be skipped
-	//sDummy = strtok(NULL, " ,\t"); // second value is always # of sectors
-	rSes.rNet->iSectorQty = rSes.iSectorQty; //atoi(sDummy); 
-	rSes.rNet->kdiv2 = rSes.iSectorQty / 2; //atoi(sDummy)/2;
-	rSes.rNet->dK_DIV_TWO_PI = rSes.iSectorQty / TWO_PI; //rSes.rNet->iSectorQty / TWO_PI; // calc this now to prevents redundant conversion operations
-	rSes.rNet->iLayerQTY = rSes.iLayerQty + 1; // 0;
-	//sDummy = strtok (NULL, " ,\t");
-	//while (atoi(sDummy)) {// this loop counts the values present in a copy of cMLMVNarch, representing neurons in each layer until a not-legal layer value is reached
-	//	sDummy = strtok (NULL, " ,\t");
-	//	++rSes.rNet->iLayerQTY; //count layers
-	//}
-	
-	rSes.rNet->rLayer=(struct rohanLayer*)malloc(rSes.rNet->iLayerQTY * sizeof (struct rohanLayer)); //point to array of layers
-		mCheckMallocWorked(rSes.rNet->rLayer)
-	
-	//if (sDummy!=NULL) {// check that there is another parameter, not just the end of the string
-	//	strcpy(rSes.sWeightSet, _strdup(sDummy));
+	try {
+		char sLog[255];
+
+		// preamble
 		sprintf(sLog, "Using weights in %s\n", rSes.sWeightSet);
-		RLog(rSes, USERF, sLog);
-	//}
-	//else{
-	//	printf("No weight set filename specificed, get from config file or cli args.\n");
-	//	strcpy(rSes.sWeightSet, "NOTFOUND");
-	//}
-	//sDummy = strtok (NULL, " ,\t");
-	//if (sDummy!=NULL) {// check that there is another parameter, not just the end of the string
-	//	rSes.rNet->iContActivation=atoi(sDummy);
+		RLog(rSes, USERF+DEBUGF, sLog);
 		if(rSes.rNet->iContActivation)
 			RLog(rSes, 0, "Continuous activation mode specified"); 
 		else
 			RLog(rSes, 0, "Discrete activation mode specified"); 
-	//}
-	//else{
-	//	printf("No Activation mode specificed, get from config file or cli args.\n");
-	//}
-	
-	//sArchDup=_strdup(sMLMVNarch); // second pass
-	//sDummy = strtok(sArchDup, " ,\t"); // skip sample qty
-	//sDummy = strtok(NULL, " ,\t"); // skip sector qty
-	//int L=0;
-	//sDummy = strtok (NULL, " ,\t");
-	//while (atoi(sDummy)) {// this loop stores neurons in each layer, until it encounters an invalid neuron qty
-		//rSes.rNet->rLayer[L].iNeuronQty = atoi(sDummy);
+		
+		// first polylayer mem structures
+		rSes.rNet->rLayer=(struct rohanLayer*)malloc(rSes.rNet->iLayerQTY * sizeof (struct rohanLayer)); //point to array of layers
+			mCheckMallocWorked(rSes.rNet->rLayer)
+			sprintf(sLog, "mallocated %d polylayers\n", rSes.rNet->iLayerQTY);
+			RLog(rSes, 0, sLog);
 		if(rSes.iLayerQty==1){
 			rSes.rNet->rLayer[1].iNeuronQty = rSes.iOutputQty;
 			rSes.rNet->rLayer[1].iDendriteQty=rSes.iInputQty;
@@ -877,19 +1136,59 @@ int cBarge::cuMakeArchValues(char *sMLMVNarch, struct rohanContext& rSes)
 			rSes.rNet->rLayer[0].iNeuronQty = rSes.iInputQty;
 			rSes.rNet->rLayer[0].iDendriteQty=0; // layer zero has no dendrites
 		}
-
-		//if (L) 
-		//	rSes.rNet->rLayer[L].iDendriteQty=rSes.rNet->rLayer[L-1].iNeuronQty; //previous layer's neuron qty is dendrite qty
-		//else 
-		//	rSes.rNet->rLayer[0].iDendriteQty=0; // layer zero has no dendrites
-		//sDummy = strtok (NULL, " ,\t");
-		//++L; //count layers
-	//}
-	mDebug(1,0) for (int i=0; i<rSes.rNet->iLayerQTY; ++i) printf("%s line %d: layer %d neurons %d dendrites %d\n", __FILE__, __LINE__, i, rSes.rNet->rLayer[i].iNeuronQty, rSes.rNet->rLayer[i].iDendriteQty);
-	mDebug(1,0) printf("cuMakeArchValues returns.\n");
-	RLog(rSes, 0, "NN architecture made");
-	
-	return rSes.rNet->rLayer[rSes.rNet->iLayerQTY-1].iNeuronQty;
+		// block, fixed length structures
+			rNet.iDendrtQTY[0]=0;
+			rNet.iNeuronQTY[0]=rSes.iInputQty+1;
+			rNet.iWeightQTY[0]=0;
+		if(rSes.iLayerQty==1){
+			rNet.iNeuronQTY[1]=rSes.iOutputQty+1;
+			rNet.iNeuronQTY[2]=0;
+			rNet.iNeuronQTY[3]=0;
+		}
+		if(rSes.iLayerQty==2){
+			rNet.iNeuronQTY[1]=rSes.iFirstHiddenSize+1;
+			rNet.iNeuronQTY[2]=rSes.iOutputQty+1;
+		}
+		if(rSes.iLayerQty==3){
+			rNet.iNeuronQTY[1]=rSes.iFirstHiddenSize+1;
+			rNet.iNeuronQTY[2]=rSes.iSecondHiddenSize+1;
+		}
+		rNet.iDendrtQTY[1]=rNet.iNeuronQTY[0];
+		rNet.iDendrtQTY[2]=rNet.iNeuronQTY[1];
+		rNet.iDendrtQTY[3]=rNet.iNeuronQTY[2];
+		rNet.iWeightQTY[1]=rNet.iNeuronQTY[1]*rNet.iDendrtQTY[1];
+		rNet.iWeightQTY[2]=rNet.iNeuronQTY[2]*rNet.iDendrtQTY[2];
+		rNet.iWeightQTY[3]=rNet.iNeuronQTY[3]*rNet.iDendrtQTY[3];
+		rNet.iDendrtOfst[0]=0;
+		rNet.iNeuronOfst[0]=0;
+		rNet.iWeightOfst[0]=0;
+		rNet.iDendrtOfst[1]=rNet.iDendrtOfst[0]+rNet.iDendrtQTY[0];
+		rNet.iNeuronOfst[1]=rNet.iNeuronOfst[0]+rNet.iNeuronQTY[0];
+		rNet.iWeightOfst[1]=rNet.iWeightOfst[0]+rNet.iWeightQTY[0];
+		rNet.iDendrtOfst[2]=rNet.iDendrtOfst[1]+rNet.iDendrtQTY[1];
+		rNet.iNeuronOfst[2]=rNet.iNeuronOfst[1]+rNet.iNeuronQTY[1];
+		rNet.iWeightOfst[2]=rNet.iWeightOfst[1]+rNet.iWeightQTY[1];
+		rNet.iDendrtOfst[3]=rNet.iDendrtOfst[2]+rNet.iDendrtQTY[2];
+		rNet.iNeuronOfst[3]=rNet.iNeuronOfst[2]+rNet.iNeuronQTY[2];
+		rNet.iWeightOfst[3]=rNet.iWeightOfst[2]+rNet.iWeightQTY[2];
+						
+		// HN3 structures ?
+		
+		RLog(rSes, 0, "NN architecture made");
+		RLog(rSes, USERF, __FUNCTION__);
+		
+		return rSes.rNet->rLayer[rSes.rNet->iLayerQTY-1].iNeuronQty;
+	}
+    catch(exception& e) {
+        cerr << "error: " << e.what() << "\n";
+		++rSes.iErrors;
+        return 0;
+    }
+    catch(...) {
+        cerr << "Exception of unknown type!\n";
+		++rSes.iErrors;
+		return 0;
+    }
 }
 
 
@@ -907,6 +1206,8 @@ int cBarge::cuMakeNNStructures(struct rohanContext &rSes)
  * rLayer[0].iNeuronQty is # of inputs in Layer 0 
  * iNeuronQTY[1] is # of neurons in Layer 1, including 0
  * iNeuronQTY[2] is # of neurons in Layer 2, including 0 */
+
+// polylayer model
 
 	int lReturn=0;
 //const cuDoubleComplex cdcZero = { 0, 0 }, 
@@ -955,6 +1256,7 @@ int cBarge::cuMakeNNStructures(struct rohanContext &rSes)
 			lay.Deltas[k]=cdcInit;
 		}
 	}
+	RLog(rSes, USERF, __FUNCTION__);
 	return lReturn; //return how many weights and outputs allocated
 }
 
@@ -1033,17 +1335,70 @@ int cBarge::LayersToBlocks(struct rohanContext& rSes) //, struct rohanNetwork& N
 			rSes.rNet->Wt[0+rSes.rNet->iWeightOfst[L]]=cdcIdentity;
 		}
 	}
+	RLog(rSes, USERF, __FUNCTION__);
 	return iReturn;
-
 }
 
+int cBarge::TokenCounter(const char * String, char * Delimiters)
+{
+	char * DupString, * Portion; int TokenCount=0;
 
-int cBarge::BinaryFileHandleRead(char* sFileName, FILE** fileInput)
+	DupString=_strdup(String); // strtok chops up the input string, so we must make a copy
+	Portion = strtok (DupString, Delimiters);
+	while (Portion != NULL) {// this loop counts the tokens present in a copy of String
+		Portion = strtok (NULL, Delimiters); 
+		++TokenCount;
+	}
+
+	return TokenCount;
+}
+
+int cBarge::GetNthToken( char * String,  char * Delimiters, char Token[255], int N)
+{
+	char * DupString, * Portion; int TokenCount=1;
+
+	DupString=_strdup(String); // strtok chops up the input string, so we must make a copy
+	Portion = strtok (DupString, Delimiters);
+	while (Portion != NULL && TokenCount<N) {// this loop counts the tokens present in a copy of String
+		Portion = strtok (NULL, Delimiters); 
+		++TokenCount;
+	}
+	sprintf(Token, "%s", Portion); // put the selected token in Token
+	return TokenCount;
+}
+int cBarge::CharRemover(char * String, char Remove)
+{ // strips unwanted character values from a string, null terminates the shortened string
+	char * A, * B;
+
+	A=B=String;
+	while (*A){ // until A points to a null
+		if(*A!=Remove) // copy non-removable chars
+			*B++=*A;
+		++A; // advance A
+	}
+	*B=*A; // copy final null
+	return A-B; // return # of removed chars
+}
+
+int cBarge::BinaryFileHandleRead(struct rohanContext& rSes, char* sFileName, FILE** fileInput)
 {mIDfunc/// Opens a file for reading in binary mode, typically a .wgt weight file.
+	char sPath[1024];
+
+		{ // quote removal inserted 7/10/12
+			CharRemover(sFileName, '"');
+		} // end quote removal
 	*fileInput = fopen(sFileName, "rb");  /* Open in BINARY mode */
 	if (*fileInput == NULL) {
-		fprintf(stderr, "Error opening %s for reading.\n", sFileName);
-		return 0;
+		sprintf(sPath, "%s\\%s", rSes.sRohanVerPath, sFileName);
+		{ // quote removal inserted 7/10/12
+			CharRemover(sPath, '"');
+		} // end quote removal
+		*fileInput = fopen(sPath, "rb");  /* Open in BINARY mode */
+		if (*fileInput == NULL) {
+			fprintf(stderr, "Error opening %s for reading.\n", sPath);
+			return 0;
+		}
+		else return 1;
 	}
 	else return 1;
 }
@@ -1051,6 +1406,9 @@ int cBarge::BinaryFileHandleRead(char* sFileName, FILE** fileInput)
 
 int cBarge::BinaryFileHandleWrite(char *sFileName, FILE **fileOutput)
 {mIDfunc/// Opens a file for writing in binary mode, typically top record results of a learning sewssion and/or to save human-readable weight values.
+		{ // quote removal inserted 7/10/12
+			CharRemover(sFileName, '"');
+		} // end quote removal
 	*fileOutput = fopen(sFileName, "wb");  /* Open in BINARY mode */
 	if (*fileOutput == NULL) {
 		fprintf(stderr, "Error opening %s for writing.\n", sFileName);
@@ -1060,12 +1418,28 @@ int cBarge::BinaryFileHandleWrite(char *sFileName, FILE **fileOutput)
 }
 
 
-int cBarge::AsciiFileHandleRead(char *sFileName, FILE **fileInput)
+int cBarge::AsciiFileHandleRead(struct rohanContext& rSes, char *sFileName, FILE **fileInput)
 {mIDfunc/// Opens a file for reading in ASCII mode, typically the .txt learning set file.
+	char sPath[1024];
+
+		{ // quote removal inserted 7/10/12
+			CharRemover(sFileName, '"');
+		} // end quote removal
+
 	*fileInput = fopen(sFileName, "r");  /* Open in ASCII read mode */
 	if (*fileInput == NULL) {
-		fprintf(stderr, "Error opening %s for reading.\n", sFileName);
-		return 0;
+		sprintf(sPath, "%s\\%s", rSes.sRohanVerPath, sFileName);
+
+		{ // quote removal inserted 7/10/12
+			CharRemover(sPath, '"');
+		} // end quote removal
+
+		*fileInput = fopen(sPath, "r");  /* Open in ASCII read mode */
+		if (*fileInput == NULL) {
+			fprintf(stderr, "Error opening %s for reading.\n", sPath);
+			return 0;
+		}
+		else return 1;
 	}
 	else return 1;
 }
@@ -1077,15 +1451,18 @@ int cBarge::AsciiFileHandleWrite(char *sFilePath, char *sFileName, FILE **fileOu
 
 	if(DirectoryEnsure(sFilePath)){
 		sprintf(sString, "%s\\%s", sFilePath, sFileName);
+		{ // quote removal inserted 7/10/12
+			CharRemover(sString, '"');
+		} // end quote removal
 		*fileOutput = fopen(sString, "w");  /* Open in ASCII write mode */
 		if (*fileOutput == NULL) {
-			//errPrintf("Error opening %s for writing.\n", sString);
+			fprintf(stderr, "Error opening %s for writing.\n", sString);
 			return false;
 		}
 		else return true;
 	}
 	else{
-		//errPrintf("Error making %s for writing.\n", sFilePath);
+		fprintf(stderr, "Error making %s for writing.\n", sFilePath);
 		return false;
 	}
 }
@@ -1161,7 +1538,7 @@ int cBarge::cuSaveNNWeightsASCII(struct rohanContext &rSes, FILE *fileOutput)
 		}
 	}
 	fclose(fileOutput);
-	
+	RLog(rSes, USERF, __FUNCTION__);
 	return lReturnValue;
 }
 
@@ -1186,6 +1563,7 @@ int cBarge::cuPreSaveNNWeights(struct rohanContext& rSes, char cVenue)
 	fileOutput = fopen(sFileName, "wb");  /* Open in BINARY mode */
 	if (fileOutput == NULL) {
 		sprintf(sLog, "Error opening %s for writing.\n", sFileName); RLog(rSes, ERRORF, sLog);
+	RLog(rSes, USERF, __FUNCTION__);
 		return 0;
 	}
 	else {
@@ -1195,12 +1573,14 @@ int cBarge::cuPreSaveNNWeights(struct rohanContext& rSes, char cVenue)
 		fileOutput = fopen(sFileAscii, "w");  /* Open in ASCII mode */
 		if (fileOutput == NULL) {
 			sprintf(sLog, "Error opening %s for writing.\n", sFileAscii); RLog(rSes, ERRORF, sLog);
+	RLog(rSes, USERF, __FUNCTION__);
 			return 0;
 		}
 		else {
 			int lWWrit=cuSaveNNWeightsASCII(rSes, fileOutput);
 			sprintf(sLog,"%d ASCII weights written to %s\n", lWWrit, sFileAscii); RLog(rSes, USERF, sLog);
 			sprintf(sLog,"report=%s", sFileAscii); RLog(rSes, GUIF, sLog);
+	RLog(rSes, USERF, __FUNCTION__);
 			return 1;
 		}	
 	}
@@ -1227,6 +1607,7 @@ int cBarge::AsciiWeightDump(struct rohanContext& rSes, FILE *fileOutput)
 		}
 	}
 	fclose(fileOutput);
+	RLog(rSes, USERF, __FUNCTION__);
 	return lReturnValue;
 }
 
@@ -1245,7 +1626,7 @@ int cBarge::LetWriteWeights(struct rohanContext& rSes)
 	RLog(rSes, 1, sLog);
 	sprintf(sLog, "product=%s", sFileName);
 	RLog(rSes, 2, sLog);
-	
+	RLog(rSes, USERF, __FUNCTION__);
 	return lReturn;
 }
 
@@ -1280,6 +1661,7 @@ int cBarge::LetWriteEvals(struct rohanContext& rSes, struct rohanLearningSet& rL
 		fclose(fileOutput);
 	}
 
+	RLog(rSes, USERF, __FUNCTION__);
 	if (lReturn)
 		return rSes.lSampleQtyReq; // return number of sample evals recorded
 	else
@@ -1289,24 +1671,24 @@ int cBarge::LetWriteEvals(struct rohanContext& rSes, struct rohanLearningSet& rL
 int cBarge::ShowDiagnostics(struct rohanContext& rSes)
 {mIDfunc
 	int iReturn=1;
-
-	printf("cBarge diagnostics: ");
+	char sLog[255];
+	
 	if(Team==NULL)
-		printf("No team!\n", iReturn=0);
+		RLog(rSes, ERRORF, "cBarge diagnostics: No team!");
 	if(Drover==NULL)
-		printf("No drover!\n", iReturn=0);
+		RLog(rSes, ERRORF, "cBarge diagnostics: No drover!");
 	if(rSes.rLearn->cdcXInputs==NULL)
-		printf("No complex inputs at host!\n", iReturn=0);
+		RLog(rSes, ERRORF, "cBarge diagnostics: No complex inputs at host!");
 	if(rSes.rLearn->dDOutputs==NULL)
-		printf("No scalar outputs at host!\n", iReturn=0);
+		RLog(rSes, ERRORF, "cBarge diagnostics: No scalar outputs at host!");
 	if(rSes.rLearn->cdcDOutputs==NULL)
-		printf("No complex outputs at host!\n", iReturn=0);
+		RLog(rSes, ERRORF, "cBarge diagnostics: No complex outputs at host!");
 	if (rLearn==NULL)
-		printf("No rLearn structure!\n", iReturn=0);
-	else
-		//printf("Holding %d samples w/ %d inputs, %d output(s)\n", *rLearn->lSampleQty, *rLearn->iInputQty, *rLearn->iOutputQty);
-		printf("Barge is holding %d samples w/ %d inputs, %d output(s).\n", rSes.rLearn->lSampleQty, rSes.rLearn->iInputQty, rSes.rLearn->iOutputQty);
-
+		RLog(rSes, ERRORF, "cBarge diagnostics: No rLearn structure!");
+	else{
+		sprintf(sLog, "Barge is holding %d samples w/ %d inputs, %d output(s).", rSes.rLearn->lSampleQty, rSes.rLearn->iInputQty, rSes.rLearn->iOutputQty);
+		RLog(rSes, ERRORF, sLog);
+	}
 #ifdef _DEBUG
 	if(gTrace) cout << "Tracing is ON.\n" ;
 	if (gDebugLvl){
@@ -1320,11 +1702,11 @@ int cBarge::ShowDiagnostics(struct rohanContext& rSes)
 		cout << "Epoch length is " << rSes.iEpochLength << " iterations.\n";
 		cout << rSes.iEvalBlocks << " EVAL Blocks per Kernel, " << rSes.iEvalThreads << " EVAL Threads per Block.\n";
 		cout << rSes.iBpropBlocks << " BPROP Blocks per Kernel, " << rSes.iBpropThreads << " BPROP Threads per Block.\n";
-		rSes.iEvalMode ? cout << "Continuous Inputs TRUE by DEFAULT.\n" : cout << "Continuous Inputs FALSE by DEFAULT.\n";
+		rSes.iReadMode ? cout << "Continuous Inputs TRUE by DEFAULT.\n" : cout << "Continuous Inputs FALSE by DEFAULT.\n";
 		rSes.iContActivation ? cout << "Continuous Outputs true by DEFAULT.\n" : cout << "Continuous Outputs false by DEFAULT.\n";
 	}
 #endif
-	
+	RLog(rSes, USERF, __FUNCTION__);
 	return iReturn;
 }
 
@@ -1334,43 +1716,64 @@ void cBarge::RLog(struct rohanContext& rSes, int iRank, char * sLogEntry)
 	using namespace boost::posix_time; 
 	ptime now = second_clock::local_time(); //use the clock 
 	string p;
-    	
-	p=strtok(sLogEntry, "\n"); // trim any trailing chars
-	*(rSes.ofsRLog) << now << "\t" << iRank << "\t" << p << endl; // all entries go to applog, regardless
+		
+	try{
+		if( rSes.iLoggingEnabled ){
+			p=strtok(sLogEntry, "\n"); // trim any trailing chars
+			*(rSes.ofsRLog) << now << "\t" << iRank << "\t" << p << endl; // all entries go to applog, regardless
+			
+			if(iRank & USERF){
+				if(rSes.bConsoleUsed)
+					cout << "#\t " << p << endl; // entries sent to console
+				else
+					*(rSes.ofsHanLog) << "#\t " << now << " " << p << endl; // entries repeated as comments in .han file if any.
+			}
 
-	if(iRank & USERF){
-		if(rSes.bConsoleUsed)
-			cout << "#\t " << p << endl; // entries sent to console
-		else
-			*(rSes.ofsHanLog) << "#\t " << now << " " << p << endl; // entries repeated as comments in .han file if any.
-	}
+			if(iRank & GUIF){
+				if(rSes.bConsoleUsed)
+					cout << p << endl; // entries sent to console
+				else
+					*(rSes.ofsHanLog) << p << endl; // typically for 'report=filename937.txt'
+			}
 
-	if(iRank & GUIF){
-		if(rSes.bConsoleUsed)
-			cout << p << endl; // entries sent to console
-		else
-			*(rSes.ofsHanLog) << p << endl; // typically for 'report=filename937.txt'
-	}
+			if(iRank & ERRORF){
+				++rSes.iErrors;
+				if(rSes.bConsoleUsed)
+					cerr << p << " " << now << endl; // entries sent to standard error reporting pipe or stream
+				else
+					*(rSes.ofsHanLog) << "error=" << p << endl; 
+			}
 
-	if(iRank & ERRORF){
-		++rSes.iErrors;
-		if(rSes.bConsoleUsed)
-			cerr << p << " " << now << endl; // entries sent to standard error reporting pipe or stream
-		else
-			*(rSes.ofsHanLog) << "error=" << p << endl; 
-	}
+			if(iRank & WARNINGF){
+				++rSes.iWarnings;
+				if(rSes.bConsoleUsed)
+					cerr << p << " " << now << endl; // entries sent to standard error reporting pipe or stream
+				else
+					*(rSes.ofsHanLog) << "warning=" << p << endl; 
+			}
 
-	if(iRank & WARNINGF){
-		++rSes.iWarnings;
-		if(rSes.bConsoleUsed)
-			cerr << p << " " << now << endl; // entries sent to standard error reporting pipe or stream
-		else
-			*(rSes.ofsHanLog) << "warning=" << p << endl; 
-	}
+			if(iRank & ADMINF){
+				if(!rSes.bConsoleUsed)
+					cout << p << endl; // entries sent to screen *if* running autonomously
+			}
 
-	if(iRank & CODERF){
-		// put some e-mail or other messaging in here?
+			if(iRank & DEBUGF){
+				fprintf(stderr, "%s\n", p.c_str());
+			}
+
+			if(iRank & CODERF){
+				// put some e-mail or other messaging in here?
+			}
+		}
 	}
+	catch(exception& e) {
+        cerr << "error: " << e.what() << "\n";
+        //return -1;
+    }
+    catch(...) {
+        cerr << "Exception of unknown type!\n";
+		//return -1;
+    }
 }
 
 
@@ -1379,7 +1782,7 @@ int cBarge::DoCuFree(struct rohanContext &rSes)
 	
 	cuFreeNNTop(rSes); // free network topology structures
 	cuFreeLearnSet(rSes); // free learning set structures
-	
+	RLog(rSes, USERF, __FUNCTION__);
 	return 0;
 }
 

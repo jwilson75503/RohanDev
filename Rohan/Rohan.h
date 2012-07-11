@@ -32,10 +32,13 @@ const cuDoubleComplex cdcIdentity = { 1, 0 };
 #define RNETlayers 4
 #define RNETbdry 8
 
+// logging target audience flags
 #define USERF 1
 #define GUIF 2
 #define ERRORF 4
 #define WARNINGF 8
+#define ADMINF 16
+#define DEBUGF 32
 #define CODERF	256
 
 // major data structures
@@ -81,6 +84,10 @@ typedef struct rohanNetwork
 	cuDoubleComplex *gpuSectorBdry;
 	rohanLayer *rLayer;
 	rohanLayer *gpuLayer;
+	rohanLayer InputLayer;
+	rohanLayer FirstHiddenLayer;
+	rohanLayer SecondHiddenLayer;
+	rohanLayer OutputLayer;
 	FILE* fileInput; // 4
 	void* hostNetPtr; // 4 
 } rohanNetwork;
@@ -88,7 +95,7 @@ typedef struct rohanNetwork
 struct rohanLearningSet /*! Learning sets contain a short preamble of parameters followed by delimited data */
 {
 	/// scalar value members
-	//int iEvalMode /*! Defaults to discrete outputs but a value of 0 denotes Continuous outputs. */;
+	//int iReadMode /*! Defaults to discrete outputs but a value of 0 denotes Continuous outputs. */;
 	int lSampleQty /*! # samples to be read from the learning set file; defaults to # samples found*/;
 	int iValuesPerLine /*! Numerical values per line-sample. Inputs + outputs should equal values per line in most cases but some inputs may be intentionally excluded from learning. */;
 	int iInputQty /*! # inputs are per line; defaults to the number of values per line, minus the number of outputs, read from left to right. See bRInJMode. */;
@@ -130,8 +137,12 @@ struct rohanLearningSet /*! Learning sets contain a short preamble of parameters
 
 typedef struct rohanContext
 {
+	// OS PROVIDED
+	int argc;
+	_TCHAR ** argv;
 	// ERRORS and progress tracking
-	int iEvalMode, iWarnings, iErrors;
+	int iWarnings;
+	int iErrors;
 	int lMemStructAlloc /* tracks allocated memory structures */ ;
 	// eval related
 	int iSaveInputs /* include inputs when saving evaluations */;
@@ -145,11 +156,14 @@ typedef struct rohanContext
 	int deviceCount /*! number of CUDA devices attached to host */ ;
 	cudaDeviceProp deviceProp /*! capabilities of the CUDA device currently in use. */ ;
 	// input handling
+	int iReadMode;
 	int bConsoleUsed /*! Session is being directed via console input. XX */;
 	int bRInJMode /*! Reverse Input Justification: When active, will read inputs from the same columns but in right to left order to maintain backwards compatibility with some older simulators. */;
 	int bRMSEon /*! diables RMSE tracking for classification problems. XX */;
 	char sLearnSet[256] /*! Filename of learning set. */;
 	char sWeightSet[256] /*! Filename of compelx weight set. (.wgt) */;
+	char cwd[1024] /*! current working directory */;
+	char sDefaultConfig[256];
 	// internal structure
 	struct rohanNetwork * rNet /*! Active network currently in use for session. */;
 	struct rohanLearningSet * rLearn /*! Active learning set currently in use for session. */;
@@ -168,15 +182,18 @@ typedef struct rohanContext
 	double dRMSE /*! most recent RMSE */;
 	double dTargetRMSE /*! Acceptable RMSE value for stopping learninig when achieved. */;
 	int iEpochLength /*! iterations per epoch; learning will pause to check once per epoch for further input */;
+	int cEngagedModel;
 	// network related
 	int iContActivation /*! Use Continuous activation function (or not). */;
 	int iSectorQty /*! sectors for k-valued logic */;
 	int iFirstHiddenSize /*! nodes specified for first hidden layer */;
 	int iSecondHiddenSize /*! nodes specified for second hidden layer */;
 	int iLayerQty /*! layers with nonzero node qtys specified */;
+	char sNetString[64];
 	// record keeping
 	FILE *deviceBucket /*! handle used for writing large volumes of diagnostic information to device */;
 	FILE *hostBucket /*! handle used for writing large volumes of diagnostic information to host */;
+	int iLoggingEnabled;
 	std::ofstream * ofsRLog /*! handle used for writing terse updates to RohanLog.txt . */;
 	std::ofstream * ofsHanLog /*! handle used for recording events to [sessionname].han . */;
 	char sRohanVerPath[256] /*! path to Rohan dir in Documents */;

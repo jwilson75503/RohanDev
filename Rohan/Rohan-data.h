@@ -36,9 +36,7 @@ int devCopyNNStructures(struct rohanContext& rSes)
 ;
 int devCopySectorTable(struct rohanContext& rSes)
 ;
-////int devOutputConvert(struct rohanContext& rSes, int lSample);
-////int devEvalNNLearnSet(struct rohanContext& rSes);
-////int dualRandomizeWeights(struct rohanContext& rSes);
-
-cuDoubleComplex ConvScalarCx(struct rohanContext& rSes, double Scalar)
+cuDoubleComplex ConvPhaseCx(struct rohanContext& rSes, double Phase)
+;
+cuDoubleComplex ConvSectorCx(struct rohanContext& rSes, double Sector)
 ;

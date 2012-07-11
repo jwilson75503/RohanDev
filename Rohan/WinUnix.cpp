@@ -20,20 +20,41 @@ int GetUserDocPath(char * sPath)
 }
 
 int DirectoryEnsure(char * sPath)
-{mIDfunc
-/// checks that a directory exists and creates it if not
+{mIDfunc/// checks that a directory exists and creates it if not
+	
 	if ((GetFileAttributes(sPath)) == INVALID_FILE_ATTRIBUTES){
 		//cout << "Directory doesn't exist\n";
 		CreateDirectory(sPath, 0);
-		fprintf(stdout, "Directory %s created\n", sPath);
+		//fprintf(stdout, "Directory %s created\n", sPath);
 	}
 
 	if ((GetFileAttributes(sPath)) == INVALID_FILE_ATTRIBUTES){
 		return false;
 	}
 	else{
-		fprintf(stdout, "Directory %s used\n", sPath);
 		return true;
 	}
 }
 
+
+int SetVerPath( struct rohanContext& rSes )
+{mIDfunc/// sets cwd to version-specific path in user's document folder
+	char sPath[255];
+
+	GetUserDocPath(sPath); // sPath now has "C:\users\documents"
+	sprintf(rSes.sRohanVerPath, "%s\\Rohan-%s", sPath, VERSION); // .sRohanVerPath has "C:\users\documents\Rohan-0.9.4"
+	
+	return true;
+}
+
+
+int ResetCwd( struct rohanContext& rSes )
+{mIDfunc/// sets cwd to version-specific path in user's document folder
+	char sPath[255];
+
+	GetUserDocPath(sPath);
+	sprintf(rSes.cwd, "%s\\Rohan-%s", sPath, VERSION); // cwd has "C:\users\documents\Rohan-0.9.4"
+	
+	
+	return true;
+}

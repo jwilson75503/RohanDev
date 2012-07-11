@@ -1,69 +1,71 @@
-int _tmain(int argc, _TCHAR* argv[])
-{mIDfunc/// general program procedure is to setup preparations for the duty loop, execute it, then do housekeeping after
-	
-	// create objects
-	struct rohanContext rSes;
-	struct rohanNetwork rNet;
-	struct rohanLearningSet rLearn;
-	cDeviceTeam cdtHorse(rSes); // the horse handles GPU computation kernels and their currency
-	cBarge cbBarge(rSes); // 
-	cDrover cdDrover(rSes, rLearn, rNet, cbBarge, cdtHorse);
-	// proceed with operations
-	if(cdDrover.DoAnteLoop(rSes, argc, argv)){
-			Barge->SetProgOptions( rSes, argc, argv )
-			Barge->ObtainGlobalSettings(rSes);
-				Team->CUDAverify(rSes)>=2.0
-				DirectoryEnsure(rSes.sRohanVerPath)
-				AsciiFileHandleWrite(rSes.sRohanVerPath, "DevBucket.txt", &(rSes.deviceBucket));
-				AsciiFileHandleWrite(rSes.sRohanVerPath, "HostBucket.txt", &(rSes.hostBucket));
-			Barge->ObtainSampleSet(rSes);
-				AsciiFileHandleRead(rSes.sLearnSet, &fileInput);.
-				DoLoadSampleSet(rSes, fileInput);
-					cuMakeArchValues(cLines[iArchLineIdx], rSes);.
-				CurateSectorValue(rSes)).
-				CompleteHostLearningSet(rSes);.
-			Barge->DoPrepareNetwork(rSes);
-				cuMakeNNStructures(rSes);.
-				BinaryFileHandleRead(rSes.sWeightSet, &rSes.rNet->fileInput);.
-				cuNNLoadWeights(rSes, rSes.rNet->fileInput);.
-				cuRandomizeWeightsBlock(rSes);.
-				cuSectorTableMake(rSes);.
-			cDrover::ShowDiagnostics(struct rohanContext& rSes, struct rohanNetwork& rNet)
-				Team->LetHitch(rSes);
-				Team->LetSlack(rSes);
-				Team->RmseEvaluateTest(rSes, rNet, 2 , 0);
-				Team->ClassifyTest(rSes, rNet, 2, 0 );
-				Team->BackPropTest(rSes, rNet, 2, 128, 0);
-			Barge->ShowDiagnostics();.
-			){
-		cdDrover.DoMainLoop(rSes);
-			DisplayMenu(0, rSes);
-			BeginSession(rSes); // new or resume session
-			GetNNTop(rSes);
-			ReGetSampleSet(rSes); XX
-			GetWeightSet(rSes);
-			LetInteractiveEvaluation(rSes);
-			LetInteractiveLearning(rSes);
-				Team->LetTaut(rSes);
-				Team->LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, rSes.iEpochLength, 'D');
-					LetTaut(rSes);
-					knlFFeRmseOpt( rSes, o, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE
-					knlBackProp( rSes, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads); // do training
-					LetSlack(rSes);
-				Team->LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, rSes.iEpochLength, 'H');
+main
+	Drover.AnteLoop;
+		Barge.PrepareAllSettings;
+			.ResetContext
+			.SetProgOptions
+			.GetTagOpt;
+			.BeginLogging;
+				.SetVerPath
+				.DirectoryEnsure
+			.GetOptions;
+				.GetEvalOpt;
+				.GetSamplesOpt;
+				.GetWeightsOpt;
+				.GetLearnOpt;
+				.GetNetworkOpt;
+					.VectorFromOption;
+			.PrepareContext
+				.GetHdweSet;
+					Team.CUDAverify
+			.PrepareNet
+			.PrepareLearn
+		Barge.ObtainSampleSet;
+			.AsciiFileHandleRead;
+			.DoLoadSampleSet;
+			.CurateSectorValue;
+			.CompleteHostLearningSet;
+		Barge.DoPrepareNetwork;
+			.cuMakeArchValues;
+			.cuMakeNNStructures;
+			.BinaryFileHandleRead;
+			.cuNNLoadWeights;
+			.cuRandomizeWeightsBlock;
+			.cuSectorTableMake;
+		.ShowDiagnostics
+		Barge.ShowDiagnostics;
+	Drover.MainLoop;
+		.AskSessionName
+		.GetNNTop
+		.GetWeightSet
+		.LetInteractiveEvaluation
+		.LetInteractiveLearning
+		Barge.cuPreSaveNNWeights
+		.cuRandomizeWeightsBlock
+		Team.LetEvalSet
+		.RmseNN
+		.LetUtilities
+		.DoLearnOpt
+		.DoEvalOpt
+	Drover.PostLoop;
+		.DoEndItAll;
+			Team.LetUnhitch;
+			Barge.DoCuFree;
+				.CuFreeNNTop;
+				.CuFreeLearnSet;
 				
-			cuPreSaveNNWeights(rSes);
-			cuRandomizeWeightsBlock(rSes); 
-			Team->LetEvalSet(rSes, 'H'); // this is performed on the host
-			RmseNN(rSes, 0);
-			LetUtilities(rSes);
-			Barge->OptionToDoubleVector("learn", v);
-			Team->LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, rSes.iEpochLength, 'D');
-			cuPreSaveNNWeights(rSes, 'D');
-			Barge->OptionToIntVector("eval", v);
-			Team->GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'D');
-			Barge->LetWriteEvals(rSes, *rSes.rLearn);
-			Barge->RLog(rSes, sLog);
-			Barge->HanReport(rSes, sLog);
-		cdDrover.DoPostLoop(rSes);
-}
+	knlBackProp;
+		mtkBackPropMT;
+			subkBackPropRoptMT;*
+				subkBackPropSoptMThread;*
+					subkEvalSampleBetaMT;
+			subkBackPropEoptMT;
+			subkBackPropSoptMThread;*
+				subkEvalSampleBetaMT;
+
+			subkBackPropRoptMWarp;
+				subkBackPropSoptMWarp;
+					subkEvalSampleBetaMT;
+			subkBackPropSoptMWarp;
+				subkEvalSampleBetaMT;
+				
+			subkBackPropSoptMWarp

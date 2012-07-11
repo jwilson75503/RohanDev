@@ -9,15 +9,18 @@ class cTeam// revised to remove subclassing: public cTeam // cTeam members avail
 		struct rohanLearningSet * rLearn;
 		class cBarge * Barge /*! The data-holding "object" currently in use. */;
 		class cDrover * Drover /*! The user-agent "driver" currently in use. */;
-		int lIterationQty /*! Iterate this many times ofr sample set and stop. */;
+		class cRamp * Ramp;
+		int lIterationQty /*! Iterate this many times over sample set and stop. */;
 		char bHitched;
 		char bTaut;
+		char cEngagedModel;
 	public:
 		int SetContext( struct rohanContext& rSes); // completed
 		int SetNetwork( struct rohanNetwork& rNet); // completed
 		int SetSamples( struct rohanLearningSet& rLearn); // completed
 		int SetDrover( class cDrover * cdDrover); // completed
 		int SetBarge( class cBarge * cbBarge); //completed
+		int SetRamp( class cRamp * crRamp);
 		int GetTrainables( struct rohanContext& rSes, int lSampleQtyReq);
 		//int GetEvalSingleSample( struct rohanContext& rSes, int lSampleIdxReq, char chMethod); /// implemented in cHostTeam, cTeam
 		//int LetBackpropSingleSample( rohanContext& rSes, int lSampleIdxReq, char chMethod); /// implemented in cHostTeam, cTeam
@@ -29,7 +32,7 @@ class cTeam// revised to remove subclassing: public cTeam // cTeam members avail
 		int LetEvalSet( rohanContext& rS, char chMethod); /// Submits a subset of the samples available forevaluation.
 	cTeam( struct rohanContext& rSes); /// ctor body in source
 		void ShowMe() /*! diagnostic identity display on screen */;
-		int LetHitch(struct rohanContext& rSes) /*! copy data to dev mem and attach structures to team */;
+		int LetHitch(struct rohanContext& rSes, char cModel) /*! copy data to dev mem and attach structures to team */;
 			int TransferContext(struct rohanContext& rSes, char Direction) /*! copy rSes 0D members to dev mem */;
 			int CopyNet(struct rohanContext& rSes, char Direction) /*! copy rNet members to dev mem */;
 				int TransferNet(struct rohanContext& rSes, char Direction) /*! copy Net params to dev mem */;

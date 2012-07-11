@@ -1,12 +1,12 @@
-<?xml version="1.0" encoding="Windows-1252"?>
+<?xml version="1.0" encoding="windows-1251"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
 	Version="9.00"
 	Name="rohan"
-	ProjectGUID="{55F71337-32A6-4C26-8CBA-A06A9183D6F2}"
+	ProjectGUID="{991A563F-A27B-4E82-ACA6-63CB5DD96384}"
 	RootNamespace="rohan"
 	Keyword="Win32Proj"
-	TargetFrameworkVersion="131072"
+	TargetFrameworkVersion="196613"
 	>
 	<Platforms>
 		<Platform
@@ -24,10 +24,10 @@
 	<Configurations>
 		<Configuration
 			Name="Debug|Win32"
-			OutputDirectory="$(ConfigurationName)"
+			OutputDirectory="$(SolutionDir)$(ConfigurationName)"
 			IntermediateDirectory="$(ConfigurationName)"
 			ConfigurationType="1"
-			CharacterSet="2"
+			CharacterSet="0"
 			>
 			<Tool
 				Name="VCPreBuildEventTool"
@@ -37,11 +37,12 @@
 			/>
 			<Tool
 				Name="Cudart Build Rule"
-				AdditionalOptions="-arch sm_20"
-				Include="$(CUDA_PATH)/include;./;../../common/inc;../../../shared/inc"
+				Include="../../../shared/inc;../../common/inc;./"
 				Arch1="21"
-				Arch2="0"
-				TargetMachinePlatform="0"
+				Arch3="30"
+				HostDebugInfo="true"
+				Optimization="0"
+				Runtime="1"
 			/>
 			<Tool
 				Name="VCXMLDataGeneratorTool"
@@ -54,15 +55,16 @@
 			/>
 			<Tool
 				Name="VCCLCompilerTool"
+				UseUnicodeResponseFiles="false"
 				Optimization="0"
-				AdditionalIncludeDirectories="&quot;D:\Program Files\boost\boost_1_48_0&quot;;&quot;$(CUDA_PATH)/include&quot;;./;../../common/inc;../../../shared/inc;&quot;C:\Program Files\boost\boost_1_48_0&quot;;&quot;C:\Program Files (x86)\boost\boost_1_47&quot;"
+				AdditionalIncludeDirectories="&quot;$(CUDA_PATH)/include&quot;;&quot;C:\Program Files\boost\boost_1_48_0&quot;;&quot;D:\Program Files\boost\boost_1_48_0&quot;;./;../../common/inc;../../../shared/inc"
 				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="1"
 				UsePrecompiledHeader="0"
 				WarningLevel="3"
-				DebugInformationFormat="3"
+				DebugInformationFormat="4"
 			/>
 			<Tool
 				Name="VCManagedResourceCompilerTool"
@@ -75,17 +77,12 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalOptions="/NODEFAULTLIB:libcmt&#x0D;&#x0A;"
-				AdditionalDependencies="cudart.lib "
-				OutputFile="../../bin/win32/$(ConfigurationName)/rohan.exe"
-				LinkIncremental="1"
-				AdditionalLibraryDirectories="&quot;D:\Program Files\boost\boost_1_48_0\stage\lib&quot;;&quot;C:\Program Files\boost\boost_1_48_0\stage\lib&quot;;&quot;$(CUDA_PATH)/lib/$(PlatformName)&quot;;../../common/lib"
+				AdditionalDependencies="cudart.lib"
+				OutputFile="../../bin/win32/$(ConfigurationName)/$(ProjectName).exe"
+				LinkIncremental="2"
+				AdditionalLibraryDirectories="&quot;$(CUDA_PATH)/lib/$(PlatformName)&quot;;../../common/lib;&quot;C:\Program Files\boost\boost_1_48_0\stage\lib&quot;;&quot;D:\Program Files\boost\boost_1_48_0\stage\lib&quot;"
 				GenerateDebugInformation="true"
-				ProgramDatabaseFile="$(OutDir)/rohan.pdb"
 				SubSystem="1"
-				EnableCOMDATFolding="1"
-				RandomizedBaseAddress="1"
-				DataExecutionPrevention="0"
 				TargetMachine="1"
 			/>
 			<Tool
@@ -108,15 +105,15 @@
 			/>
 			<Tool
 				Name="VCPostBuildEventTool"
-				CommandLine="IF EXIST cg_variables.h move cg_variables.h $(ConfigurationName)\"
 			/>
 		</Configuration>
 		<Configuration
 			Name="Release|Win32"
-			OutputDirectory="$(ConfigurationName)"
+			OutputDirectory="$(SolutionDir)$(ConfigurationName)"
 			IntermediateDirectory="$(ConfigurationName)"
 			ConfigurationType="1"
-			CharacterSet="2"
+			CharacterSet="1"
+			WholeProgramOptimization="1"
 			>
 			<Tool
 				Name="VCPreBuildEventTool"
@@ -126,8 +123,10 @@
 			/>
 			<Tool
 				Name="Cudart Build Rule"
-				Include="$(CUDA_PATH)/include;./;../../common/inc;../../../shared/inc"
-				TargetMachinePlatform="1"
+				Include="../../../shared/inc"
+				Arch3="30"
+				PtxAsOptionV="true"
+				Runtime="0"
 			/>
 			<Tool
 				Name="VCXMLDataGeneratorTool"
@@ -140,12 +139,14 @@
 			/>
 			<Tool
 				Name="VCCLCompilerTool"
-				AdditionalIncludeDirectories="$(CUDA_PATH)/include;./;../../common/inc;../../../shared/inc"
-				PreprocessorDefinitions="WIN32;_CONSOLE"
+				Optimization="2"
+				EnableIntrinsicFunctions="true"
+				AdditionalIncludeDirectories="$(CUDA_PATH)/include"
+				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE"
 				RuntimeLibrary="0"
+				EnableFunctionLevelLinking="true"
 				UsePrecompiledHeader="0"
 				WarningLevel="3"
-				Detect64BitPortabilityProblems="true"
 				DebugInformationFormat="3"
 			/>
 			<Tool
@@ -159,16 +160,15 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="cudart.lib cutil32.lib"
-				OutputFile="../../bin/win32/$(ConfigurationName)/rohan.exe"
+				AdditionalDependencies="cudart.lib"
+				OutputFile="../../bin/win32/$(ConfigurationName)/$(ProjectName).exe"
 				LinkIncremental="1"
-				AdditionalLibraryDirectories="$(CUDA_PATH)/lib/$(PlatformName);../../common/lib"
-				GenerateDebugInformation="true"
+				AdditionalLibraryDirectories="$(CUDA_PATH)/lib/$(PlatformName)"
+				GenerateDebugInformation="false"
 				SubSystem="1"
 				OptimizeReferences="2"
-				EnableCOMDATFolding="1"
-				RandomizedBaseAddress="1"
-				DataExecutionPrevention="0"
+				EnableCOMDATFolding="2"
+				LinkTimeCodeGeneration="0"
 				TargetMachine="1"
 			/>
 			<Tool
@@ -191,15 +191,14 @@
 			/>
 			<Tool
 				Name="VCPostBuildEventTool"
-				CommandLine="IF EXIST cg_variables.h move cg_variables.h $(ConfigurationName)\"
 			/>
 		</Configuration>
 		<Configuration
 			Name="Debug|x64"
-			OutputDirectory="$(PlatformName)\$(ConfigurationName)"
+			OutputDirectory="$(SolutionDir)$(PlatformName)\$(ConfigurationName)"
 			IntermediateDirectory="$(PlatformName)\$(ConfigurationName)"
 			ConfigurationType="1"
-			CharacterSet="2"
+			CharacterSet="1"
 			>
 			<Tool
 				Name="VCPreBuildEventTool"
@@ -209,7 +208,11 @@
 			/>
 			<Tool
 				Name="Cudart Build Rule"
-				Include="$(CUDA_PATH)/include;./;../../common/inc;../../../shared/inc"
+				Include="../../../shared/inc"
+				Arch3="30"
+				HostDebugInfo="true"
+				Optimization="0"
+				Runtime="1"
 			/>
 			<Tool
 				Name="VCXMLDataGeneratorTool"
@@ -224,14 +227,13 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories="$(CUDA_PATH)/include;./;../../common/inc;../../../shared/inc"
+				AdditionalIncludeDirectories="$(CUDA_PATH)/include"
 				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="1"
 				UsePrecompiledHeader="0"
 				WarningLevel="3"
-				Detect64BitPortabilityProblems="true"
 				DebugInformationFormat="3"
 			/>
 			<Tool
@@ -245,16 +247,12 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="cudart.lib cutil64D.lib"
-				OutputFile="../../bin/win64/$(ConfigurationName)/rohan.exe"
+				AdditionalDependencies="cudart.lib"
+				OutputFile="../../bin/win64/$(ConfigurationName)/$(ProjectName).exe"
 				LinkIncremental="1"
-				AdditionalLibraryDirectories="$(CUDA_PATH)/lib/$(PlatformName);../../common/lib"
+				AdditionalLibraryDirectories="$(CUDA_PATH)/lib/$(PlatformName)"
 				GenerateDebugInformation="true"
-				ProgramDatabaseFile="$(OutDir)/rohan.pdb"
 				SubSystem="1"
-				EnableCOMDATFolding="1"
-				RandomizedBaseAddress="1"
-				DataExecutionPrevention="0"
 				TargetMachine="17"
 			/>
 			<Tool
@@ -277,15 +275,15 @@
 			/>
 			<Tool
 				Name="VCPostBuildEventTool"
-				CommandLine="IF EXIST cg_variables.h move cg_variables.h $(ConfigurationName)\"
 			/>
 		</Configuration>
 		<Configuration
 			Name="Release|x64"
-			OutputDirectory="$(PlatformName)\$(ConfigurationName)"
+			OutputDirectory="$(SolutionDir)$(PlatformName)\$(ConfigurationName)"
 			IntermediateDirectory="$(PlatformName)\$(ConfigurationName)"
 			ConfigurationType="1"
-			CharacterSet="2"
+			CharacterSet="1"
+			WholeProgramOptimization="1"
 			>
 			<Tool
 				Name="VCPreBuildEventTool"
@@ -295,7 +293,10 @@
 			/>
 			<Tool
 				Name="Cudart Build Rule"
-				Include="$(CUDA_PATH)/include;./;../../common/inc;../../../shared/inc"
+				Include="../../../shared/inc"
+				Arch3="30"
+				PtxAsOptionV="true"
+				Runtime="0"
 			/>
 			<Tool
 				Name="VCXMLDataGeneratorTool"
@@ -309,12 +310,14 @@
 			/>
 			<Tool
 				Name="VCCLCompilerTool"
-				AdditionalIncludeDirectories="$(CUDA_PATH)/include;./;../../common/inc;../../../shared/inc"
-				PreprocessorDefinitions="WIN32;_CONSOLE"
+				Optimization="2"
+				EnableIntrinsicFunctions="true"
+				AdditionalIncludeDirectories="$(CUDA_PATH)/include"
+				PreprocessorDefinitions="WIN32;NDEBUG;_CONSOLE"
 				RuntimeLibrary="0"
+				EnableFunctionLevelLinking="true"
 				UsePrecompiledHeader="0"
 				WarningLevel="3"
-				Detect64BitPortabilityProblems="true"
 				DebugInformationFormat="3"
 			/>
 			<Tool
@@ -328,16 +331,15 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="cudart.lib cutil64.lib"
-				OutputFile="../../bin/win64/$(ConfigurationName)/rohan.exe"
+				AdditionalDependencies="cudart.lib"
+				OutputFile="../../bin/win64/$(ConfigurationName)/$(ProjectName).exe"
 				LinkIncremental="1"
-				AdditionalLibraryDirectories="$(CUDA_PATH)/lib/$(PlatformName);../../common/lib"
-				GenerateDebugInformation="true"
+				AdditionalLibraryDirectories="$(CUDA_PATH)/lib/$(PlatformName)"
+				GenerateDebugInformation="false"
 				SubSystem="1"
 				OptimizeReferences="2"
-				EnableCOMDATFolding="1"
-				RandomizedBaseAddress="1"
-				DataExecutionPrevention="0"
+				EnableCOMDATFolding="2"
+				LinkTimeCodeGeneration="0"
 				TargetMachine="17"
 			/>
 			<Tool
@@ -360,7 +362,6 @@
 			/>
 			<Tool
 				Name="VCPostBuildEventTool"
-				CommandLine="IF EXIST cg_variables.h move cg_variables.h $(ConfigurationName)\"
 			/>
 		</Configuration>
 	</Configurations>
@@ -369,7 +370,7 @@
 	<Files>
 		<Filter
 			Name="Source Files"
-			Filter="cu;cpp;c;cxx;def;odl;idl;hpj;bat;asm;asmx"
+			Filter="cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx"
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
 			<File
@@ -382,6 +383,10 @@
 			</File>
 			<File
 				RelativePath=".\Complex-math.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\cRamp.cpp"
 				>
 			</File>
 			<File
@@ -401,20 +406,8 @@
 				>
 			</File>
 			<File
-				RelativePath=".\Rohan-io.cpp"
-				>
-			</File>
-			<File
 				RelativePath=".\Rohan-kernel.cu"
 				>
-				<FileConfiguration
-					Name="Debug|Win32"
-					>
-					<Tool
-						Name="Cudart Build Rule"
-						GPUDebugInfo="false"
-					/>
-				</FileConfiguration>
 			</File>
 			<File
 				RelativePath=".\Rohan-learn.cpp"
@@ -422,6 +415,10 @@
 			</File>
 			<File
 				RelativePath=".\Rohan.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\ShowMe.cpp"
 				>
 			</File>
 			<File
@@ -435,7 +432,13 @@
 		</Filter>
 		<Filter
 			Name="Header Files"
+			Filter="h;hpp;hxx;hm;inl;inc;xsd"
+			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
 			>
+			<File
+				RelativePath=".\book.h"
+				>
+			</File>
 			<File
 				RelativePath=".\cBarge.h"
 				>
@@ -446,6 +449,10 @@
 			</File>
 			<File
 				RelativePath=".\Complex-math.h"
+				>
+			</File>
+			<File
+				RelativePath=".\cRamp.h"
 				>
 			</File>
 			<File
@@ -461,11 +468,11 @@
 				>
 			</File>
 			<File
-				RelativePath=".\Rohan-data.h"
+				RelativePath=".\lock.h"
 				>
 			</File>
 			<File
-				RelativePath=".\Rohan-io.h"
+				RelativePath=".\Rohan-data.h"
 				>
 			</File>
 			<File
@@ -496,6 +503,12 @@
 				RelativePath=".\WinUnix.h"
 				>
 			</File>
+		</Filter>
+		<Filter
+			Name="Resource Files"
+			Filter="rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav"
+			UniqueIdentifier="{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}"
+			>
 		</Filter>
 	</Files>
 	<Globals>

@@ -109,20 +109,32 @@ int cuEvalNNLearnSet(struct rohanContext& rSes)
 }
 
 
-cuDoubleComplex ConvScalarCx(struct rohanContext& rSes, double Scalar)
+cuDoubleComplex ConvSectorCx(struct rohanContext& rSes, double Sector)
 {mIDfunc // converts a scalar value to a returned complex coordinate)
 
 	cuDoubleComplex cdcReturn;
 	
-	if (Scalar > rSes.rNet->iSectorQty){
+	if (Sector > rSes.rNet->iSectorQty){
 		cdcReturn.x=666.6;
 		cdcReturn.y=666.6;
 	}
 	else {
-		double theta=Scalar/rSes.rNet->dK_DIV_TWO_PI;
+		double theta=Sector*rSes.rNet->two_pi_div_sect_qty;
 		cdcReturn.x=cos( theta);
 		cdcReturn.y=sin( theta);			
 	}
 
+	return cdcReturn;
+}
+
+
+cuDoubleComplex ConvPhaseCx(struct rohanContext& rSes, double Phase)
+{mIDfunc // converts a scalar value to a returned complex coordinate)
+
+	cuDoubleComplex cdcReturn;
+	
+	cdcReturn.x=cos( Phase);
+	cdcReturn.y=sin( Phase);			
+	
 	return cdcReturn;
 }

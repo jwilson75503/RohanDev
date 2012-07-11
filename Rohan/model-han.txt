@@ -1,0 +1,75 @@
+# Model .han file for Rohan automation by Jeff for Justin on July 6, 2012
+#
+# Rohan will always look for rohan.roh unless instructed to look for other
+# config files by CLI.
+# 
+# Blank lines and lines beginning with # are meant to be ignored by programs
+# and heeded by users.
+#
+# Instructive lines are in the form of 'keyword=value' and
+# meant to be processed into a variable map.
+
+
+# error may be used multiple times, and its value describes a fatal condition
+# preventing the further correct operation of Rohan.
+
+error=samples file not found, cannot continue
+
+
+# eval's value reports the completion (pass) or not (fail) of the eval
+# directive given to Rohan in the same session that produced the current .han
+# file.
+
+eval=pass
+
+
+# learn's value reports the completion (pass) or not (fail) of the learn
+# directive given to Rohan in the same session that produced the current
+# .han file.
+
+learn=pass
+
+
+# product may be used multiple times, and its value is the filename of a
+# binary file produced by Rohan in the same session that produced the current
+# .han file.
+
+product=C:\Users\Researcher\Documents\Rohan-0.9.4\NahorNahorRmse937.wgt
+
+
+# report may be used multiple times, and its value is the filename of a text
+# file produced by Rohan in the same session that produced the current .han
+# file.
+
+report=C:\Users\Researcher\Documents\Rohan-0.9.4\NahorNahorRmse937WGT.txt
+
+
+# RMSE's value is that achieved by the learn directive given to Rohan in the
+# session that produced the .han file.
+
+RMSE=9.375847
+
+
+# rohan's value is the full, absolute path to the executable producing the
+# current .han file, so that the client reading the .han file can invoke it
+# directly as needed.
+
+rohan=c:\ProgramData\NVIDIA Corporation\NVIDIA GPU Computing SDK 4.2\C\bin\win32\Debug\rohan.exe
+
+
+# warning may be used multiple times, and its value describes a non-fatal
+# condition impacting the proper operation of Rohan.
+
+warning=weights file not found, using random values
+
+
+# the presence of a completed instructive line with the keyword 'end'
+# indicates the .han file is complete and the Rohan session producing it has
+# ended. Further lines in the .han file may be ignored by the client.
+
+end=end
+
+
+# ignore me
+
+warning=sky is falling

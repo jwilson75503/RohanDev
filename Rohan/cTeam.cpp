@@ -72,6 +72,13 @@ int cTeam::SetDrover( class cDrover * cdDrover)
 }
 
 
+int cTeam::SetRamp( class cRamp * crRamp)
+{mIDfunc/// enables pointer access to active Drover object
+	Ramp = crRamp;
+	return 0;
+}
+
+
 void cTeam::ShowMe()
 {mIDfunc
 	//ShowMeSes(* rSes, false);
@@ -100,11 +107,16 @@ int cTeam::LetEvalSet( rohanContext& rSes, char chMethod)
 int cTeam::LetTrainNNThresh( rohanContext& rSes, int o, char chMethod, double dTargetRMSE, int iEpochLength, char Venue)
 {mIDfunc/// Submits samples available for backprop learning.
 /// o indictaes which output(s)
-//
 // chMethod controls option used:
 // Option S - single sample correction only XX unimplemented?
 // Option E - keep existing weights, count trainable samples only
 // Option R - perform corrections for all trainable samples
+	// cModel indicates which calculation model is desired to be used for the duration of the hitching.
+	// S - serial, no acceleration
+	// 3 - Hecht-Neilsen trilayer with indefinitely width
+	// B - fixed-size "block" implementation meant to accomodate shared memory
+	// P - polylayer original implementation, currently limited to 3 layers + 0
+
 	int lReturn, count=1;
 	double RMSE; //=dTargetRMSE;
 	char sLog[255];
@@ -119,12 +131,12 @@ int cTeam::LetTrainNNThresh( rohanContext& rSes, int o, char chMethod, double dT
 			bInternalTaut=true;
 		}
 		RMSE=knlFFeRmseOpt( rSes, o, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE
-		lReturn=knlBackProp( rSes, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads); // do training
+		lReturn=knlBackProp( rSes, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads, cEngagedModel); // do training
 
 		if(chMethod=='R') {
 			RMSE=knlFFeRmseOpt( rSes, o, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE
 			while(dTargetRMSE<RMSE && lReturn && count < iEpochLength && chMethod=='R'){ // target not met, trainable samples left
-				lReturn=knlBackProp( rSes, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads); // do more training
+				lReturn=knlBackProp( rSes, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads, cEngagedModel); // do more training
 				++count; // increment counter
 				RMSE=knlFFeRmseOpt( rSes, o, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE anew
 			}
@@ -164,7 +176,7 @@ int cTeam::LetTrainNNThresh( rohanContext& rSes, int o, char chMethod, double dT
 
 int cTeam::LetBackpropSingleSample( rohanContext& rSes, int lSampleIdxReq, int o, char chMethod)
 {mIDfunc
-	int lReturn=knlBackProp( rSes, o, 'S', rSes.iBpropBlocks, rSes.iBpropThreads); // S indicates single bprop operation
+	int lReturn=knlBackProp( rSes, o, 'S', rSes.iBpropBlocks, rSes.iBpropThreads, cEngagedModel); // S indicates single bprop operation
 
 	return lReturn;
 }
@@ -174,6 +186,12 @@ double cTeam::GetRmseNN(struct rohanContext& rSes, int o, char Option, char Venu
 	// o controls which output is used (zero for all)
 	// Option will determine if existing data is used (E, not fully implemented) or refreshed (R) XX 6/23/12
 	// Venue controls which mechanism (cpu H, GPU D) will do the calulation
+		// cModel indicates which calculation model is desired to be used for the duration of the hitching.
+	// S - serial, no acceleration
+	// 3 - Hecht-Neilsen trilayer with indefinitely width
+	// B - fixed-size "block" implementation meant to accomodate shared memory
+	// P - polylayer original implementation, currently limited to 3 layers + 0
+
 	double dAnswer;
 
 	if (Venue=='D'||Venue=='d'){ // calc on GPU
@@ -198,22 +216,35 @@ double cTeam::GetRmseNN(struct rohanContext& rSes, int o, char Option, char Venu
 	return dAnswer;
 }
 
-int cTeam::LetHitch(struct rohanContext& rSes)    
+int cTeam::LetHitch(struct rohanContext& rSes, char cModel)   
 {mIDfunc/*! \callgraph \callergraph copy data to device memory space and attach structures to Team */
+	// cModel indicates which calculation model is desired to be used for the duration of the hitching.
+	// S - serial, no acceleration
+	// 3 - Hecht-Neilsen trilayer with indefinitely width
+	// B - fixed-size "block" implementation meant to accomodate shared memory
+	// G - fixed-size "block" implementation without shared memory
+	// P - polylayer original implementation, currently limited to 3 layers + 0
+	char sLog[255];
+
 	if (bHitched){
 		Barge->RLog(rSes, WARNINGF, "cTeam already hitched.");
 		return FALSE;
 	}
+	if (cModel!='S' && rSes.dMasterCalcVer <2.0){
+		Barge->RLog(rSes, WARNINGF, "Insufficient CUDA Compute Capability value.");
+		return FALSE;
+	}
 	else{
-		//printf("cTeam begin hitch process.\n");
+		rSes.cEngagedModel=cEngagedModel=cModel;
+		sprintf(sLog, "Engaging model %c, %s network...", cEngagedModel, rSes.sNetString); Barge->RLog(rSes, 0+DEBUGF, sLog);
 
-		// BEGIN context data structure members
+		// BEGIN context data structure members (multimodel 4)
  		TransferContext(rSes, 'D');
 		
-		/*! BEGIN network architecture structure members */
+		// BEGIN network architecture structure members (need multimodel ZZ)
 		CopyNet( rSes, 'D' );
 		
-		/*! BEGIN learning set structure members */
+		// BEGIN learning set structure members (need multimodel ZZ)
 		CopyLearnSet(rSes, 'D');
 		
 		/// end members and structures
@@ -226,24 +257,27 @@ int cTeam::LetHitch(struct rohanContext& rSes)
 
 int cTeam::TransferContext(struct rohanContext& rSes, char Direction)
 {mIDfunc/*! copy rSes and members to dev mem */
-	
-	int SIZE = sizeof(rSes);
-	
-	if(Direction=='D'||Direction=='d') {
-		// publish Context structure to device
-			mCheckCudaWorked
-		cudaMemcpyToSymbol( "devSes", &rSes, sizeof(rSes) );
-			mCheckCudaWorked
+	int iReturn=1;
+	if(cEngagedModel!='S'){//non-serial models do this
+		int SIZE = sizeof(rSes);
+		
+		if(Direction=='D'||Direction=='d') {
+			// publish Context structure to device
+				mCheckCudaWorked
+			cudaMemcpyToSymbol( "devSes", &rSes, sizeof(rSes) );
+				mCheckCudaWorked
+			if(crc32buf( (char*)&rSes, SIZE )!=knlCRC32Buf( (char*)rSes.devSes, SIZE )){
+				iReturn=0;
+				Barge->RLog(rSes, ERRORF, "FAILURE copying context H->D");
+			}
+		}
+		else {
+			// retrieve rSes from device
+			cudaMemcpyFromSymbol( &rSes, "devSes", sizeof(rSes) );
+				mCheckCudaWorked
+		}
 	}
-	else {
-		// retrieve rSes from device
-		cudaMemcpyFromSymbol( &rSes, "devSes", sizeof(rSes) );
-			mCheckCudaWorked
-	}
-	if(crc32buf( (char*)&rSes, SIZE )!=knlCRC32Buf( (char*)rSes.devSes, SIZE ))
-		Barge->RLog(rSes, ERRORF, "FAILURE copying context");
-	
-	return 0;
+	return iReturn;
 }
 
 int cTeam::CopyNet(struct rohanContext& rSes, char Direction)
@@ -415,6 +449,13 @@ int cTeam::CopyLearnSet(struct rohanContext& rSes, char Direction)
 
 int cTeam::LetUnHitch(struct rohanContext& rSes)
 {mIDfunc/*! \callgraph \callergraph free device memory structures to Team */
+	// cModel indicates which calculation model is desired to be used for the duration of the hitching. ZZ
+	// S - serial, no acceleration
+	// 3 - Hecht-Neilsen trilayer with indefinitely width
+	// B - fixed-size "block" implementation meant to accomodate shared memory
+	// P - polylayer original implementation, currently limited to 3 layers + 0                                                                                                                                                           
+
+	char sLog[255];
 	if(bHitched){ // check for hitched state
 		if(bTaut) // check for taut/slack state
 			LetSlack(rSes); // if taut, go slack before unhitching
@@ -450,6 +491,8 @@ int cTeam::LetUnHitch(struct rohanContext& rSes)
 		/// end members and structures
 		Barge->RLog(rSes, 0, "cTeam unhitched.");
 		bHitched=FALSE;
+		sprintf(sLog, "Model %c network disengaged.", cEngagedModel); Barge->RLog(rSes, 0+DEBUGF, sLog);
+		rSes.cEngagedModel=cEngagedModel=NULL;
 		return TRUE;
 	}
 	else{

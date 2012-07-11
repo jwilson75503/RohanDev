@@ -31,7 +31,7 @@ int SetDevDebug(int gDevDebug)
 
 
 extern"C"
-int knlBackProp(struct rohanContext& rSes, int o, char Option, int iBlocks, int iThreads)
+int knlBackProp(struct rohanContext& rSes, int o, char Option, int iBlocks, int iThreads, char cModel)
 {mIDfunc /*! divides error in yielded values and back-propagates corrections among weights */
 // Option S - single sample correction only
 // Option E - keep existing weights, count trainable samples only
@@ -46,12 +46,12 @@ int knlBackProp(struct rohanContext& rSes, int o, char Option, int iBlocks, int 
 	
 		cudaEventCreate( &start);
 		cudaEventCreate( &stop);
-	cudaPrintfInit(8*1024*1024);
+	//cudaPrintfInit(8*1024*1024);
 
-		sprintf(sLog, "knlBackProp(rSes, o=%d, Option %c, %d, %d) called\n", o, Option, iBlocks, iThreads); 
+		sprintf(sLog, "knlBackProp(rSes, o=%d, Option %c, %d, %d, %c) called\n", o, Option, iBlocks, iThreads, cModel); 
 		rSes.Team->TeamLog(rSes, 0, sLog); 
 		cudaEventRecord( start, 0); 
-	mtkBackPropMT<<< iBlocks , iThreads >>>( rSes.lSampleQtyReq, 1, Option); // only single outputs currently supported XX 6/23/12
+	mtkBackPropMT<<< iBlocks , iThreads >>>( rSes.lSampleQtyReq, 1, Option, cModel); // only single outputs currently supported XX 6/23/12
 		cudaEventRecord( stop, 0);
 		mCheckCudaWorked
 	
@@ -61,10 +61,10 @@ int knlBackProp(struct rohanContext& rSes, int o, char Option, int iBlocks, int 
 		cudaEventElapsedTime( &gElapsedTime, start, stop);
 		gKernelTimeTally+=eTime=gElapsedTime;
 
-	cudaPrintfDisplay(rSes.deviceBucket, true);
-	cudaPrintfEnd();
+	//cudaPrintfDisplay(rSes.deviceBucket, true);
+	//cudaPrintfEnd();
 	//fprintf(rSes.deviceBucket, "RETURN: %d\n", lTotal);
-	sprintf(sLog, "knlBackProp(rSes, o=%d, Option %c, %d, %d) returns %d after %3.1f ms \n", o, Option, iBlocks, iThreads, lTotal, eTime/1000000);
+	sprintf(sLog, "knlBackProp(rSes, o=%d, Option %c, %d, %d, %c) returns %d after %3.1f ms \n", o, Option, iBlocks, iThreads, rSes.cEngagedModel, lTotal, eTime/1000000);
 	rSes.Team->TeamLog(rSes, 0, sLog); 
 		cudaEventDestroy( start);
 		cudaEventDestroy( stop);
@@ -73,7 +73,7 @@ int knlBackProp(struct rohanContext& rSes, int o, char Option, int iBlocks, int 
 }
 
 
-__global__ void mtkBackPropMT( int lSampleQtyReq, int o, char Option)
+__global__ void mtkBackPropMT( int lSampleQtyReq, int o, char Option, char cModel)
 {/*! divides error in yielded values and back-propagates corrections among weights */
 // Option S - single sample correction only
 // Option E - keep existing weights, count trainable samples only
@@ -82,11 +82,17 @@ __global__ void mtkBackPropMT( int lSampleQtyReq, int o, char Option)
 	
 	devlTrainable=0; // reset global mem trainable counter
 
-	if(Option=='R' || Option=='r'){ //
+	if(Option=='R' && devSes.cEngagedModel=='G'){ //
+		subkBackPropRoptMWarp(lSampleQtyReq, o);
+	}
+	else if(Option=='R' || Option=='r'){ //
 		subkBackPropRoptMT(lSampleQtyReq, o);
 	}
 	else if(Option=='E' || Option=='e'){ //
 		subkBackPropEoptMT(lSampleQtyReq, o);
+	}
+	else if(Option=='S' && devSes.cEngagedModel=='G'){
+		subkBackPropSoptMWarp(lSampleQtyReq, false,  devNet, devNet.Signals, devNet.Zs, devNet.Wt, devNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
 	}
 	else if(Option=='S' || Option=='s'){
 		subkBackPropSoptMThread(lSampleQtyReq, false,  devNet, devNet.Signals, devNet.Zs, devNet.Wt, devNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
@@ -123,6 +129,40 @@ __device__ void subkBackPropRoptMT(int lSampleQtyReq, int o)
 	for (int offset=0; (index =offset+tIx)< MAXWEIGHTS ; offset+=lTotalThreads){ // iterate over weights
 		devNet.Wt[index]=myDevNet.Wt[index]; // copy to global back from shared memory
 	}
+}	// exit to allow eval kernel
+
+
+__device__ void subkBackPropRoptMWarp(int lSampleQtyReq, int o)
+{/*! perform corrections for all trainable samples; may assume FFE has just happened/classify based on pre-iteration weights  */
+	//
+	// externalities: const devSes, const devLearn, devNet
+
+	//Sharedmem dod removed for speed check
+	//__shared__  __align__(16) struct rohanNetwork myDevNet; //set up copy in highest speed shared memory
+	//int index; // for warpwise loops
+	int OUTROWLEN=devLearn.iOutputQty+1; // prepare array index and width
+	int tIx = threadIdx.x + blockDim.x * blockIdx.x; // tIx is thread index over the kernel
+	//int lTotalThreads = gridDim.x * blockDim.x; // total number of threads
+	double maxSquared = devSes.dMAX * devSes.dMAX ; //needed to compart to stored delta squared values
+	
+	//myDevNet=devNet; // copy contents to shared memory for speed
+	for (int s=0; s<lSampleQtyReq; ++s){ // iterate over samples
+		//  It is assumed that FFE has just taken place prior to this call
+		if( devLearn.gpudSqrErr[IDX2C( o, s, OUTROWLEN )] > maxSquared ){ // if the MAX criterion is exceeded	
+			if(tIx==0){
+				++devlTrainable; // increment the counter	
+			}
+			// do backprop
+			//subkBackPropSoptMWarp( s, true, myDevNet, myDevNet.Signals, myDevNet.Zs, myDevNet.Wt, myDevNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
+			subkBackPropSoptMWarp( s, true, devNet, devNet.Signals, devNet.Zs, devNet.Wt, devNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
+				//cuDoubleComplex W = myDevNet.Wt[IDX2C( myDevNet.iWeightOfst[2]+1, 1, myDevNet.iDendrtQTY[2] )];
+				//if(tIx==0)if(s%2)cuPrintf("\t%d\t%08lX\n", s, subkCrc32buf((char*)&myDevNet.Wt[myDevNet.iWeightOfst[2]], myDevNet.iWeightQTY[2] * 16) );
+		}
+	}
+	// weight adjustment loop ends, return weights to global mem for evaluate kernel
+	//for (int offset=0; (index =offset+tIx)< MAXWEIGHTS ; offset+=lTotalThreads){ // iterate over weights
+	//	devNet.Wt[index]=myDevNet.Wt[index]; // copy to global back from shared memory
+	//}
 }	// exit to allow eval kernel
 
 
