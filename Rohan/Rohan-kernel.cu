@@ -3,6 +3,7 @@
 /* Includes, cuda */
 #include "stdafx.h"
 #include "cuPrintf.cu"
+#include "Kernels.cuh"
 
 extern int gDebugLvl, gDevDebug, gTrace;
 extern float gElapsedTime, gKernelTimeTally;
@@ -11,12 +12,13 @@ extern float gElapsedTime, gKernelTimeTally;
 __device__ __align__(16) __constant__ struct rohanContext devSes;
 __device__ __align__(16) __constant__ struct rohanLearningSet devLearn;
 __device__ __align__(16) struct rohanNetwork devNet;
-__device__ __align__(16) const cuDoubleComplex gpuZero = { 0, 0 };
-__device__ __align__(16) double devdReturn[1024*1024];
-__device__ __align__(16) double devdRMSE=0;
+__device__ __align__(16) const cuDoubleComplex gpuZero = { 0.0 , 0.0 };
+__device__ __align__(16) double devdReturn[1024];
+__device__ __align__(16) double devdAccumSE=0.0;
 __device__ __align__(16) int devlReturn[1024*1024];
 __device__ __align__(16) int devlTrainable=0;
 __device__ __align__(16) int gDevDebug=0;
+__device__ __shared__ double sdata[1024];
 
 
 extern"C"
@@ -46,9 +48,12 @@ int knlBackProp(struct rohanContext& rSes, int o, char Option, int iBlocks, int 
 	
 		cudaEventCreate( &start);
 		cudaEventCreate( &stop);
-	//cudaPrintfInit(8*1024*1024);
+//cudaPrintfInit(8*1024*1024);
+//#define CUPRINTF_UNRESTRICTED   -1
+//__device__ void cuPrintfRestrict(int threadid, int blockid);
 
-		sprintf(sLog, "knlBackProp(rSes, o=%d, Option %c, %d, %d, %c) called\n", o, Option, iBlocks, iThreads, cModel); 
+		sprintf(sLog, "\tknlBackProp(rSes, o=%d, Option %c, %d, %d, %c) called", o, Option, iBlocks, iThreads, cModel); 
+		//fprintf(rSes.deviceBucket, "%s\n", sLog);
 		rSes.Team->TeamLog(rSes, 0, sLog); 
 		cudaEventRecord( start, 0); 
 	mtkBackPropMT<<< iBlocks , iThreads >>>( rSes.lSampleQtyReq, 1, Option, cModel); // only single outputs currently supported XX 6/23/12
@@ -61,10 +66,10 @@ int knlBackProp(struct rohanContext& rSes, int o, char Option, int iBlocks, int 
 		cudaEventElapsedTime( &gElapsedTime, start, stop);
 		gKernelTimeTally+=eTime=gElapsedTime;
 
-	//cudaPrintfDisplay(rSes.deviceBucket, true);
-	//cudaPrintfEnd();
-	//fprintf(rSes.deviceBucket, "RETURN: %d\n", lTotal);
-	sprintf(sLog, "knlBackProp(rSes, o=%d, Option %c, %d, %d, %c) returns %d after %3.1f ms \n", o, Option, iBlocks, iThreads, rSes.cEngagedModel, lTotal, eTime/1000000);
+//cudaPrintfDisplay(rSes.deviceBucket, true);
+//cudaPrintfEnd();
+	sprintf(sLog, "\tknlBackProp(rSes, o=%d, Option %c, %d, %d, %c) returns %d after %3.1f ms", o, Option, iBlocks, iThreads, rSes.cEngagedModel, lTotal, eTime);
+	//fprintf(rSes.deviceBucket, "%s\n", sLog);
 	rSes.Team->TeamLog(rSes, 0, sLog); 
 		cudaEventDestroy( start);
 		cudaEventDestroy( stop);
@@ -83,56 +88,63 @@ __global__ void mtkBackPropMT( int lSampleQtyReq, int o, char Option, char cMode
 	devlTrainable=0; // reset global mem trainable counter
 
 	if(Option=='R' && devSes.cEngagedModel=='G'){ //
-		subkBackPropRoptMWarp(lSampleQtyReq, o);
+		subkBackPropRGoptMT(lSampleQtyReq, o);
 	}
 	else if(Option=='R' || Option=='r'){ //
-		subkBackPropRoptMT(lSampleQtyReq, o);
+		subkBackPropRBoptMT(lSampleQtyReq, o);
+		//subkBackPropRGoptMT(lSampleQtyReq, o);
 	}
 	else if(Option=='E' || Option=='e'){ //
 		subkBackPropEoptMT(lSampleQtyReq, o);
 	}
-	else if(Option=='S' && devSes.cEngagedModel=='G'){
-		subkBackPropSoptMWarp(lSampleQtyReq, false,  devNet, devNet.Signals, devNet.Zs, devNet.Wt, devNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
+	else if(Option=='S' && devSes.cEngagedModel=='G'){ // 
+		subkBackPropSGoptMT(lSampleQtyReq, false,  devNet, devNet.Signals, devNet.Zs, devNet.Wt, devNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
+		//subkBackPropSBoptMT(lSampleQtyReq, false,  devNet, devNet.Signals, devNet.Zs, devNet.Wt, devNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
 	}
-	else if(Option=='S' || Option=='s'){
-		subkBackPropSoptMThread(lSampleQtyReq, false,  devNet, devNet.Signals, devNet.Zs, devNet.Wt, devNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
+	else if(Option=='S' || Option=='s'){ // 
+		subkBackPropSBoptMT(lSampleQtyReq, false,  devNet, devNet.Signals, devNet.Zs, devNet.Wt, devNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
+		//subkBackPropSGoptMT(lSampleQtyReq, false,  devNet, devNet.Signals, devNet.Zs, devNet.Wt, devNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
 	}
 }
 
 
-__device__ void subkBackPropRoptMT(int lSampleQtyReq, int o)
+__device__ void subkBackPropRBoptMT(int lSampleQtyReq, int o)
 {/*! perform corrections for all trainable samples; may assume FFE has just happened/classify based on pre-iteration weights  */
 	//
 	// externalities: const devSes, const devLearn, devNet
 
 	__shared__  __align__(16) struct rohanNetwork myDevNet; //set up copy in highest speed shared memory
-	int index; // for warpwise loops
+	//int index; // for warpwise loops
 	int OUTROWLEN=devLearn.iOutputQty+1; // prepare array index and width
 	int tIx = threadIdx.x + blockDim.x * blockIdx.x; // tIx is thread index over the kernel
-	int lTotalThreads = gridDim.x * blockDim.x; // total number of threads
+	//int lTotalThreads = gridDim.x * blockDim.x; // total number of threads
 	double maxSquared = devSes.dMAX * devSes.dMAX ; //needed to compart to stored delta squared values
 	
 	myDevNet=devNet; // copy contents to shared memory for speed
 	for (int s=0; s<lSampleQtyReq; ++s){ // iterate over samples
 		//  It is assumed that FFE has just taken place prior to this call
+		//if(tIx==0)cuPrintf("s#%2d: %f > %f ?\n", s, devLearn.gpudSqrErr[IDX2C( o, s, OUTROWLEN )] , maxSquared);
 		if( devLearn.gpudSqrErr[IDX2C( o, s, OUTROWLEN )] > maxSquared ){ // if the MAX criterion is exceeded	
 			if(tIx==0){
 				++devlTrainable; // increment the counter	
 			}
-			// do backprop
-			subkBackPropSoptMThread( s, true, myDevNet, myDevNet.Signals, myDevNet.Zs, myDevNet.Wt, myDevNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
+			// do backprop // B MT, G MWarp
+			subkBackPropSBoptMT( s, true, myDevNet, myDevNet.Signals, myDevNet.Zs, myDevNet.Wt, myDevNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
+			//subkBackPropSGoptMT( s, true, myDevNet, myDevNet.Signals, myDevNet.Zs, myDevNet.Wt, myDevNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
 				//cuDoubleComplex W = myDevNet.Wt[IDX2C( myDevNet.iWeightOfst[2]+1, 1, myDevNet.iDendrtQTY[2] )];
 				//if(tIx==0)if(s%2)cuPrintf("\t%d\t%08lX\n", s, subkCrc32buf((char*)&myDevNet.Wt[myDevNet.iWeightOfst[2]], myDevNet.iWeightQTY[2] * 16) );
 		}
 	}
 	// weight adjustment loop ends, return weights to global mem for evaluate kernel
-	for (int offset=0; (index =offset+tIx)< MAXWEIGHTS ; offset+=lTotalThreads){ // iterate over weights
-		devNet.Wt[index]=myDevNet.Wt[index]; // copy to global back from shared memory
-	}
+	//for (int offset=0; (index =offset+tIx)< MAXWEIGHTS ; offset+=lTotalThreads){ // iterate over weights
+	//	devNet.Wt[index]=myDevNet.Wt[index]; // copy to global back from shared memory
+	//}
+	//__syncthreads(); this didn't help
+	devNet=myDevNet;
 }	// exit to allow eval kernel
 
 
-__device__ void subkBackPropRoptMWarp(int lSampleQtyReq, int o)
+__device__ void subkBackPropRGoptMT(int lSampleQtyReq, int o)
 {/*! perform corrections for all trainable samples; may assume FFE has just happened/classify based on pre-iteration weights  */
 	//
 	// externalities: const devSes, const devLearn, devNet
@@ -153,8 +165,9 @@ __device__ void subkBackPropRoptMWarp(int lSampleQtyReq, int o)
 				++devlTrainable; // increment the counter	
 			}
 			// do backprop
-			//subkBackPropSoptMWarp( s, true, myDevNet, myDevNet.Signals, myDevNet.Zs, myDevNet.Wt, myDevNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
-			subkBackPropSoptMWarp( s, true, devNet, devNet.Signals, devNet.Zs, devNet.Wt, devNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
+			//subkBackPropSGoptMT( s, true, myDevNet, myDevNet.Signals, myDevNet.Zs, myDevNet.Wt, myDevNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
+			subkBackPropSGoptMT( s, true, devNet, devNet.Signals, devNet.Zs, devNet.Wt, devNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
+			//subkBackPropSBoptMT( s, true, devNet, devNet.Signals, devNet.Zs, devNet.Wt, devNet.Deltas, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval);
 				//cuDoubleComplex W = myDevNet.Wt[IDX2C( myDevNet.iWeightOfst[2]+1, 1, myDevNet.iDendrtQTY[2] )];
 				//if(tIx==0)if(s%2)cuPrintf("\t%d\t%08lX\n", s, subkCrc32buf((char*)&myDevNet.Wt[myDevNet.iWeightOfst[2]], myDevNet.iWeightQTY[2] * 16) );
 		}
@@ -166,7 +179,7 @@ __device__ void subkBackPropRoptMWarp(int lSampleQtyReq, int o)
 }	// exit to allow eval kernel
 
 
-__device__ void subkBackPropSoptMThread(int s, int o, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
+__device__ void subkBackPropSBoptMT(int s, int o, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
 {/*! propagates adjustment of weights backwards preceeding layers from the chosen network output. */
 	// s is sample's index
 	//
@@ -181,20 +194,21 @@ __device__ void subkBackPropSoptMThread(int s, int o, rohanNetwork& Net, cuDoubl
 		/* clear all temp values BP0 */
 		__shared__  __align__(16) cuDoubleComplex Signals[MAXNEURONS], Zs[MAXNEURONS], Deltas[MAXNEURONS];
 		for (int offset=0;	(index =offset+threadIdx.x)< MAXNEURONS; offset+=blockDim.x){ 
+			//if(s>9990)cuPrintf("\t%5d\t%5d\t%5d\n", s, index, tIx);
 			Deltas[index]=gpuZero;
 			Signals[index]=gpuZero;
 			Zs[index]=gpuZero; // preloading weights reduces mass R RMSE/eval time from 3.0 ms to 2.6 ms, so we're going try it here as well: JAW 5/27/12
 		}
 		/* re-evaluate sample to load temp values. BPI */
 		// this sample eval includes __syncthreads() internally
-		subkEvalSampleBetaMT( devSes, s, Net, o, Signals, Zs, Wt, XInputs, YEval, dYEval, devLearn.gpudSqrErr);
+		subkEvalSampleBetaMT( devSes, s, Net, o, Signals, Zs, Wt, XInputs, YEval, dYEval, devLearn.gpudSqrErr); 
 		/* begin error calculation. BPII */
 		// Deltastar /* measured error at the chosen network output. */ ;
 		/* calc top layer deltas. */
 		int TOP=Net.iLayerQTY-1;
 		int ROWLEN=Net.iNeuronQTY[TOP];
 		//for(int i=0; i<Net.iNeuronQTY[TOP]; ++i){
-		for (int offset=0; (index =offset+tIx)< Net.iNeuronQTY[TOP] ; offset+=lTotalThreads){ // index stands for i
+		for (int offset=1; (index =offset+tIx)< Net.iNeuronQTY[TOP] ; offset+=lTotalThreads){ // index stands for i; changed start from 0 to 1 in 8/12
 			 // delta-star = D - Y = Desired output minus actual output from evaluation
 			 // D is the cplx coords of the sector of the desired answer		Y is the complex result of evaluation of the given sample, unactivated. */
 			cuDoubleComplex Deltastar = CxSubtractCxUT( 
@@ -203,6 +217,7 @@ __device__ void subkBackPropSoptMThread(int s, int o, rohanNetwork& Net, cuDoubl
 			 /* divide the correction; delta = alpha * delta-star / n+1 (but alpha is always 1 for now). */
 			//Deltas[Net.iNeuronOfst[TOP]+index] = CxDivideRlUT( Deltastar, Net.iDendrtQTY[TOP] );
 			Deltas[Net.iNeuronOfst[TOP]+index] = CxMultiplyRlUT( Deltastar, Net.dINV_S[TOP] );
+			//if(tIx==1)cuPrintf("s#%d % 2.6f+% 2.6f /d*=% 2.6f+% 2.6fi, d=% 2.6f+% 2.6fi/\n", s, Signals[Net.iNeuronOfst[TOP]+index].x, Signals[Net.iNeuronOfst[TOP]+index].y, Deltastar.x, Deltastar.y, Deltas[Net.iNeuronOfst[TOP]+index].x, Deltas[Net.iNeuronOfst[TOP]+index].y);
 		}
 		/* Now distribute the correction to lower layers if any. BPII.1 */
 		if (Net.iLayerQTY>2){  /* remember layer 0 = inputs, layer 1 = bottom row, layer {2..iLayerQTY-2} = middle row, layer iLayerQTY-1 = top row. */
@@ -328,7 +343,7 @@ __device__ void subkBackPropSoptMThread(int s, int o, rohanNetwork& Net, cuDoubl
 	// execution returns from Multi-Warp version
 }
 
-__device__ void subkBackPropSoptMWarp(int s, int o, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
+__device__ void subkBackPropSGoptMT(int s, int o, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
 {/*! propagates adjustment of weights backwards preceeding layers from the chosen network output. */
 	// This subroutine employs extensive use of __syncthreads() and other mechanisms to keep multiple warps from colliding or outrunning correct values
 	// s is sample's index
@@ -532,39 +547,47 @@ double knlFFeRmseOpt(struct rohanContext& rSes, int o, char Option, int iBlocks,
 	// o is the index of output to be checked, or all outputs if o=0
 	//Option will determine if existing data is used (E, not implemented) or refreshed (R) XX
 	//
-	//	externalities: devdRMSE in device-global scope
+	//	externalities: devdAccumSE in device-global scope
 	//	calls: kernel mtkFFeRmseOptMT
 	double dTotal=0.0, dReturn; //float elapsedTime;
 	char sLog[255];
 
+//cudaPrintfInit(8*1024*1024);
+//#define CUPRINTF_UNRESTRICTED   -1
+//__device__ void cuPrintfRestrict(int threadid, int blockid);
 	cudaEvent_t start, stop;
 	cudaEventCreate( &start);
 	cudaEventCreate( &stop);
 	
+	sprintf(sLog, "\tknlFFeRmseOpt(rSes, o=%d, Option %c, %d, %d) is called.", o, Option, iBlocks, iThreads); 
+	//fprintf(rSes.deviceBucket, "%s\n", sLog);
+	rSes.Team->TeamLog(rSes, 0, sLog); 
 		cudaEventRecord( start, 0);
-	cudaMemcpyToSymbol( "devdRMSE", &dTotal, sizeof(double) );
+	cudaMemcpyToSymbol( "devdAccumSE", &dTotal, sizeof(double) );
 		mCheckCudaWorked
  
-	//cudaPrintfInit();
-	mtkFFeRmseOptMT<<< iBlocks , iThreads >>>( rSes.lSampleQtyReq, 1, Option); // only single outputs currently supported XX 6/23/12
-	//cudaPrintfDisplay(rSes.deviceBucket, true);
-	//cudaPrintfEnd();
+	mtkFFeRmseOptMT<<< iBlocks , iThreads >>>( rSes.lSampleQtyReq, o, Option); // only single outputs currently supported XX 6/23/12
+	mtkRmseFinalMT<<< 1, iBlocks >>>( iBlocks ); // reduces final RMSE figures
 
-	cudaMemcpyFromSymbol( &dTotal, "devdRMSE", sizeof(double) );
+	cudaMemcpyFromSymbol( &dTotal, "devdAccumSE", sizeof(double) );
 		mCheckCudaWorked
 		cudaEventRecord( stop, 0);
 	cudaEventSynchronize( stop);
 		cudaEventElapsedTime( &gElapsedTime, start, stop);
+//cudaPrintfDisplay(rSes.deviceBucket, true);
+//cudaPrintfEnd();
 		gKernelTimeTally+=gElapsedTime;
 
-	dReturn=rSes.dRMSE=rSes.dDevRMSE=sqrt(dTotal/rSes.lSampleQtyReq);
+		dReturn=sqrt(dTotal/rSes.lSampleQtyReq);
+		//rSes.Team->UpdateRmseRecord(rSes, dReturn, dReturn, rSes.cEngagedModel);// can't go here, out of scope; should only go in Team's members that call on this kernel, or equivalent for other methods
 
-	if(gDevDebug)printf(">>DEVICE: Time to complete FFeRMSE kernel(%c): %3.1f ms\n", Option, gElapsedTime);
 		cudaEventDestroy( start);
 		cudaEventDestroy( stop);
-		//fprintf(rSes.deviceBucket, "RETURN: %f\t%f\n", dTotal, dReturn );
 	
-	sprintf(sLog, "knlFFeRmseOpt(rSes, o=%d, Option %c, %d, %d) returns %2.2f\n", o, Option, iBlocks, iThreads, dReturn); 
+	//sprintf(sLog, "Wall= %08lX", knlCRC32Buf((char*)(rSes.devNet->Wt), MAXWEIGHTS * 16) );
+	//fprintf(rSes.deviceBucket, "%s\n", sLog);
+	sprintf(sLog, "\tknlFFeRmseOpt(rSes, o=%d, Option %c, %d, %d) returns %.6f=sqrt(%2.2f/%d) after %3.1f ms.", o, Option, iBlocks, iThreads, dReturn, dTotal, rSes.lSampleQtyReq, gElapsedTime); 
+	//fprintf(rSes.deviceBucket, "%s\n", sLog);
 	rSes.Team->TeamLog(rSes, 0, sLog); 
 	return dReturn;
 }
@@ -577,7 +600,7 @@ __global__ void mtkFFeRmseOptMT( int lSampleQtyReq, int o, char Option)
 	//	or if will be single (R) or multiple (M) threads per sample
 	//	(S) is single thread, no RMSE calc
 	//
-	//	externalities: devSes, devNet, devLearn, devdRMSE
+	//	externalities: devSes, devNet, devLearn, devdAccumSE
 	//	calls: subkEvalSampleSingleThread, subkEvalSampleBetaMT, subkRmseMT
 	
 	__shared__  __align__(16) cuDoubleComplex myWt[MAXWEIGHTS]; //each block will fill its own copy in faster shared memory
@@ -592,6 +615,7 @@ __global__ void mtkFFeRmseOptMT( int lSampleQtyReq, int o, char Option)
 		for (int offset=0; (sindex =offset+tIx)< lSampleQtyReq ; offset+=lTotalThreads){ // sindex stands for s
 			cuDoubleComplex Signals[MAXNEURONS], Zs[MAXNEURONS];
 			subkEvalSampleSingleThread(sindex, 'R', Signals, Zs, myWt, devLearn.gpuXInputs, devLearn.gpuYEval, devLearn.gpudYEval, devLearn.gpudSqrErr); // evaluate that sample with disposable Sums and retained Wt s
+			//cuPrintf("s%3d: D%6.3f - Y%6.3f -> SE%7.3f\n", sindex, devLearn.gpudDOutputs[IDX2C( 1, sindex, 2 )], devLearn.gpudYEval[IDX2C( 1, sindex, 2 )], devLearn.gpudSqrErr[IDX2C( 1, sindex, 2 )]);
 		}
 	}
 	else if(Option=='M'){
@@ -606,8 +630,10 @@ __global__ void mtkFFeRmseOptMT( int lSampleQtyReq, int o, char Option)
 	}
 	// feed-forward evaluation above, RMSE calculation below
 	if(Option != 'S'){
-		subkRmseMTBeta(	lSampleQtyReq, o, devLearn.iOutputQty+1, devLearn.gpudSqrErr ); // after all samples are evaluated, do error calculations
-		//if(tIx==0)devSes.dDevRMSE=sqrt(devdRMSE/lSampleQtyReq);
+		//subkRmseMTBeta(	lSampleQtyReq, o, devLearn.iOutputQty+1, devLearn.gpudSqrErr ); // after all samples are evaluated, do error calculations
+		//subkRmseMTGamma(	lSampleQtyReq, o, devLearn.iOutputQty+1, devLearn.gpudSqrErr ); // improved reduction with diags
+		subkRmseMTDelta(	lSampleQtyReq, o, devLearn.iOutputQty+1, devLearn.gpudSqrErr ); // improved reduction w/o diags
+		//if(tIx==0)devSes.dDevRMSE=sqrt(devdAccumSE/lSampleQtyReq);
 	}
 }
 
@@ -625,13 +651,17 @@ __device__ void subkEvalSampleBetaMT(rohanContext& Ses, int s, rohanNetwork& Net
 	int tIx = threadIdx.x + blockDim.x * blockIdx.x; // tIx is thread index over the kernel
 	int lTotalThreads = gridDim.x * blockDim.x; // total number of threads
 	
+	//int X=0; if(tIx<=25)X=1;
+
 	/*! layer zero (inputs) is special. */
 	int INROWLEN=Net.iNeuronQTY[0];
 
 	for (int offset=0; (index =offset+tIx)< MAXNEURONS ; offset+=lTotalThreads){ // index stands for i
 		Signals[Net.iNeuronOfst[0]+index]= gpuZero;
-		if(index < INROWLEN)
+		if(index < INROWLEN) {
 			Signals[Net.iNeuronOfst[0]+index]= XInputs[IDX2C( index, s, INROWLEN )];
+			//if(X)cuPrintf("s#%2d,t#%2d: X   % 2.6f+% 2.6f\n", s, tIx, Signals[Net.iNeuronOfst[0]+index].x, Signals[Net.iNeuronOfst[0]+index].y);		
+		}
 	}
 	__syncthreads();
 	//for (int offset=0; (index =offset+tIx)< INROWLEN ; offset+=lTotalThreads){ // index stands for i
@@ -657,6 +687,14 @@ __device__ void subkEvalSampleBetaMT(rohanContext& Ses, int s, rohanNetwork& Net
 			}
 			// ACTIVATE //
 			Signals[Net.iNeuronOfst[LAY]+kindex] = CxActivateUT( Zs[Net.iNeuronOfst[LAY]+kindex], Net);
+			//if(X){
+			//	cuPrintf("s#%2d,t#%2d: L#%d % 2.6f+% 2.6f signal\n", s, tIx, LAY, 
+			//		Signals[Net.iNeuronOfst[LAY]+kindex].x, 
+			//		Signals[Net.iNeuronOfst[LAY]+kindex].y);		
+			//	cuPrintf("s#%2d,t#%2d: L#%d % 2.6f+% 2.6f weight 0\n", s, tIx, LAY, 
+			//		Wt[IDX2C( Net.iWeightOfst[LAY] + 0, kindex, iSignalQTY )].x, 
+			//		Wt[IDX2C( Net.iWeightOfst[LAY] + 0, kindex, iSignalQTY )].y);		
+			//}
 		}
 	}
 	__syncthreads();
@@ -667,11 +705,12 @@ __device__ void subkEvalSampleBetaMT(rohanContext& Ses, int s, rohanNetwork& Net
 	for (int offset=0; (index =offset+tIx)< OUTROWLEN ; offset+=lTotalThreads){ // index stands for i
 		YEval[IDX2C( index, s, OUTROWLEN )]
 			= Signals[Net.iNeuronOfst[TOP]+index] ; // store final complex output(s)
+		//if(X)cuPrintf("s#%2d,t#%2d: F   % 2.6f+% 2.6f\n", s, tIx, Signals[Net.iNeuronOfst[TOP]+index].x, Signals[Net.iNeuronOfst[TOP]+index].y);
 		dYEval[IDX2C( index, s, OUTROWLEN )]
 			= FUnitCxUT( YEval[IDX2C( index, s, OUTROWLEN )] ) * Net.iSectorQty; // convert final complex outputs to sectors and store that
 		if(devLearn.iContOutputs==false) // round off decimal if disc outputs is set
 			dYEval[IDX2C( index, s, OUTROWLEN )]
-				= int(dYEval[IDX2C( index, s, OUTROWLEN )]);
+				= floor(dYEval[IDX2C( index, s, OUTROWLEN )]);
 		//
 		///  Deltas not updated during backprop, which is what this eval method is for
 		//
@@ -730,8 +769,7 @@ __device__ void subkEvalSampleSingleThread(int s, char Option, cuDoubleComplex *
 		dYEval[IDX2C( i, s, OUTROWLEN )]
 			=FUnitCxUT( YEval[IDX2C( i, s, OUTROWLEN )] )*devNet.iSectorQty; // convert activated final output to sectors and store that
 			if(devLearn.iContOutputs==false) // round off decimal if disc activation is set
-				//devLearn.gpudYEval[IDX2C( i, s, OUTROWLEN )]=int(devLearn.gpudYEval[IDX2C( i, s, OUTROWLEN )]);
-				dYEval[IDX2C( i, s, OUTROWLEN )]=int(dYEval[IDX2C( i, s, OUTROWLEN )]);
+				dYEval[IDX2C( i, s, OUTROWLEN )]=floor(dYEval[IDX2C( i, s, OUTROWLEN )]);
 			double dDelta=abs( devLearn.gpudDOutputs[IDX2C( i, s, OUTROWLEN )]-dYEval[IDX2C( i, s, OUTROWLEN )] ); 
 			if(dDelta>(double)(devNet.iSectorQty/2)) // if error arc is greater than half
 				dDelta=((double)devNet.iSectorQty-dDelta); // set delta to the lesser arc length
@@ -763,46 +801,10 @@ __device__ void subkEvalSampleSingleThread(int s, char Option, cuDoubleComplex *
 }
 
 
-__device__ void subkRmseMT(int lSampleQtyReq, int o, int OUTROWLEN, double * dSqrErr)
-{/*! sums all SE values for oth input */
-	//	externalities 
-	//				write devdReturn, devdRMSE
-	//
-	//	may need to run in full warp quantities of threads
-	//	verified for 2 samples 5/23/12
-	
-	int row;//, OUTROWLEN=devLearn.iOutputQty+1; // prepare array index and width
-	int tIx = threadIdx.x + blockDim.x * blockIdx.x; // tIx is thread index over the kernel
-	int lTotalThreads = gridDim.x * blockDim.x; // total number of threads
-	
-	devdReturn[tIx]=0.0; // clear global mem accumulator; out of bound samples will remain at this value
-	for (int k=0; (row=k+tIx)<lSampleQtyReq; k+=lTotalThreads){ // advance thread qty samples each time, falling out if row is beyond bounds
-		devdReturn[tIx]+= dSqrErr[IDX2C( o, row, OUTROWLEN )]; // accumulate the delta squared for the indicated sample
-		//if(gDevDebug) printf("[%d]=%f\t", tIx, dSqrErr[IDX2C( o, row, OUTROWLEN )]);
-	}
-	//end linear accumulation, begin intra-block reduction
-	__syncthreads(); // crucial placement
-	
-	int j=blockDim.x/2;
-	while (j){
-		if (threadIdx.x < j || tIx+j < devLearn.lSampleQty){ // select for bottom half of threads in each block AND make sure that upper half is not beyond working samples
-			devdReturn[tIx] += devdReturn[tIx+j]; // add the top half values to their bottom half counterparts
-		}
-		__syncthreads(); // crucial placement
-		j /=2; // divide bottom half into halves and do it again
-	}
-	
-	// all threads' values in a given block are now accumulated in its 0th thread's devdReturn[s]
-	if(threadIdx.x==0){ // calling on each 0th thread
-		atomicAdd(&devdRMSE, devdReturn[tIx]); // accumulate each block's total atomically
-		//cuPrintf("devdReturn= %f\n", devdReturn[tIx]);
-	}	
-}
-
 __device__ void subkRmseMTBeta(int lSampleQtyReq, int o, int OUTROWLEN, double * dSqrErr)
 {/*! sums all SE values for oth input */
 	//	externalities 
-	//				write devdRMSE
+	//				write devdAccumSE
 	//
 	//	verified for 10k samples 6/21/12
 	
@@ -830,152 +832,120 @@ __device__ void subkRmseMTBeta(int lSampleQtyReq, int o, int OUTROWLEN, double *
 	
 	// all threads' values in a given block are now accumulated in its 0th thread's dReturn element
 	if(threadIdx.x==0){ // calling on each 0th thread
-		atomicAdd(&devdRMSE, dReturn[0]); // accumulate each block's total atomically
+		atomicAdd(&devdAccumSE, dReturn[0]); // accumulate each block's total atomically
 	}	
 }
 
 
-__device__ void subkShowMeDiffSums( cuDoubleComplex * Sums, char cSymbol, int x1, int x2, int x3)
-{/// checks all elements of Sums against their corresponding XInputs and ZOutputs
-	for(int L=1; L<devNet.iLayerQTY; ++L){
-		for (int i=0; i<=devNet.rLayer[L].iNeuronQty; ++i){
-			double X = devNet.rLayer[L].ZOutputs[i].x - Sums[ devNet.iNeuronOfst[L]+i ].x;
-			double Y = devNet.rLayer[L].ZOutputs[i].y - Sums[ devNet.iNeuronOfst[L]+i ].y;
-			cuDoubleComplex delta = { X, Y };
-			double Z = CxAbsUT(delta);
-			if (Z>0.01){
-				printf("host%c ZOutput %d,%d Sums %d position %d,%d,%d = %f,%f\n", cSymbol, L, i, devNet.iNeuronOfst[L]+1, x1, x2, x3, X+Y, Z);
-				Sums[ devNet.iNeuronOfst[L]+i ] = devNet.rLayer[L].ZOutputs[i] ;
-			}
+__device__ void subkRmseMTDelta(int limit, int o, int OUTROWLEN, double * dSqrErr)
+{/*! sums all SE values for oth input */
+	//	externalities 
+	//				read (none)
+	//				write devdReturn
+	//
+	//	adapted from mharris@nvidia.com
+
+	extern __shared__ double sdata[];
+
+	unsigned int tid = threadIdx.x;
+	unsigned int i = threadIdx.x + blockDim.x * blockIdx.x; // i is thread index over the kernel
+
+	if(i<limit)
+		sdata[tid]=dSqrErr[IDX2C( o, i, OUTROWLEN )];
+	else
+		sdata[tid]=0;
+	__syncthreads();
+
+	// do reduction in shared mem
+	for(unsigned int s=blockDim.x/2; s>0; s>>=1) {
+		if (tid < s) {
+			sdata[tid] += sdata[tid + s];
 		}
+		__syncthreads();
 	}
-	//return 0;
+
+	// write result for this block to global mem
+	if (tid == 0) {
+		devdReturn[blockIdx.x] = sdata[0];
+	}
 }
 
 
-__device__ void subkShowMeResetSums( cuDoubleComplex * Sums)
-{/// checks all elements of Sums against their corresponding XInputs and ZOutputs
-	for(int L=0; L<devNet.iLayerQTY; ++L){
-		for (int i=0; i<=devNet.rLayer[L].iNeuronQty; ++i){
-			Sums[ devNet.iNeuronOfst[L]+i ] = devNet.rLayer[L].ZOutputs[i] ;
+__device__ void subkRmseMTGamma(int limit, int o, int OUTROWLEN, double * dSqrErr)
+{/*! sums all SE values for oth input */
+	//	externalities 
+	//				read (none)
+	//				write devdReturn
+	//
+	//	adapted from mharris@nvidia.com
+
+	extern __shared__ double sdata[];
+
+	unsigned int tid = threadIdx.x;
+	unsigned int i = threadIdx.x + blockDim.x * blockIdx.x; // i is thread index over the kernel
+
+	int c=0;
+	if(i==0)
+		for(int z=0; z<limit && z<blockDim.x ; ++z)
+			if(dSqrErr[IDX2C( o, z, OUTROWLEN )])
+				cuPrintf("%d %2.f, ", z, dSqrErr[IDX2C( o, z, OUTROWLEN )], ++c);
+	if(i==0)
+		cuPrintf("\n(%d nonzero elements)\n", c);
+	__syncthreads();
+
+	if(i<limit)
+		sdata[tid]=dSqrErr[IDX2C( o, i, OUTROWLEN )];
+	else
+		sdata[tid]=0;
+	__syncthreads();
+
+	// do reduction in shared mem
+	for(unsigned int s=blockDim.x/2; s>0; s>>=1) {
+		if (tid < s) {
+			sdata[tid] += sdata[tid + s];
+			if(blockIdx.x==0)cuPrintf("s%3d tid%3d SE\t%7.3f\n", s, tid, sdata[tid] );
 		}
+		__syncthreads();
 	}
-	//return 0;
+
+	// write result for this block to global mem
+	if (tid == 0) {
+		devdReturn[blockIdx.x] = sdata[0];
+	}
 }
 
-__device__ void subkEvalSingleSampleUT(int lSample)
-{	/*! here beginneth evaluation of sam. */
 
-	/*! layer zero (inputs) is special. */
-		subkConvertInputsUT( lSample);
-	 /*! middle and top layers. */
-		subkEvalMidTopLayersUT( lSample);
-	 /*! last layer is also special  IMPORTANT keep synchronized with cuEvalSingleOutput in rohan-learn.cpp. */
-		subkOutputConvertUT( lSample);
-	 /*! end of sample evaluation. */
-}
-
-__device__ void subkConvertInputsUT( int lSample)
-{/// converts sample inputs to complex NN input layer values //sam refs removed 11/6
-	/// layer zero (inputs) is special
-	/// virtual input neurons' outputs are network inputs converted to complex coords
-	//int s=lSample; //replace for-loop domain with requested sample index
-
-	int ROWLEN=devLearn.iInputQty+1;
+__global__ void mtkRmseFinalMT(int limit)
+{/*! sums all SE values for oth input */
+	//	externalities 
+	//				read devdReturn
+	//				write devdAccumSE
+	//
+	//	adapted from mharris@nvidia.com
 	
-	for (int i=0; i<ROWLEN; ++i){
-		devNet.gpuLayer[0].gpuZOutputs[i]=devLearn.gpuXInputs[IDX2C( i, lSample, ROWLEN )];
+	extern __shared__ double sdata[];
 
+	unsigned int tid = threadIdx.x;
+	unsigned int i = threadIdx.x + blockDim.x * blockIdx.x; // i is thread index over the kernel
 
-		//if(i==1)printf("subkCI%d| %g+%g -> %g+%g\n", lSample, devNet.gpuLayer[0].gpuZOutputs[i].x, devNet.gpuLayer[0].gpuZOutputs[i].y, devLearn.gpuXInputs[IDX2C( i, lSample, ROWLEN )].x, devLearn.gpuXInputs[IDX2C( i, lSample, ROWLEN )].y);
+	if (i<limit)
+		sdata[tid]=devdReturn[i];
+	else
+		sdata[tid]=0;
+	__syncthreads();
 
-
-	}
-	// end convert inputs
-}
-
-__device__ void subkEvalMidTopLayersUT( int lSample)
-{/// number crunches the middle and top layers of an MLMVN 
-	//const cuDoubleComplex gpuZero = { 0, 0 };
-	//const cdcInit = { -999.0, 999.0 };
-
-	for (int L=1; L<devNet.iLayerQTY; ++L){
-		//printf("subkEvalMidTopLayersUT Layer %d\n%dX|", L, L);
-		//struct rohanLayer& lay = devNet.gpuLayer[L];
-		int iLastNeuron=devNet.gpuLayer[L].iNeuronQty; // size of current layer
-		int PL=L-1; // index of previous layer
-		int iLastSignal=devNet.gpuLayer[L].iDendriteQty; // weight qty depends on size of previous layer
-			//cuDoubleComplex*& wt = devNet.gpuLayer[L].gpuWeights;
-			cuDoubleComplex*& oldOut = devNet.gpuLayer[PL].gpuZOutputs;
-			cuDoubleComplex*& newOut = devNet.gpuLayer[L].gpuZOutputs;
-
-
-		/*for (int j=0; j<=iLastSignal; ++j)
-			printf("%f+%f,%d ", oldOut[j].x, oldOut[j].y, j);		
-		printf("\n%dZ|", L);*/
-			//printf("skEMTL%d| %g+%g ?= %g+%g\n", L, devNet.Wt[IDX2C(devNet.iWeightOfst[L]+1, 1, lay.iNeuronQty+1)].x, devNet.Wt[IDX2C(devNet.iWeightOfst[L]+1, 1, lay.iNeuronQty+1)].y, wt[IDX2C(1, 1, lay.iNeuronQty+1)].x, wt[IDX2C(1, 1, lay.iNeuronQty+1)].y);
-
-
-		for (int i=0; i<=iLastNeuron; ++i){ //Neuron zero is not skipped, its output should be 1+0i as a check
-			newOut[i]=gpuZero; //newOut[i].x=1; newOut[i].y=0;
-			for (int j=0; j<=iLastSignal; ++j){ //walk weights on inputs from previous layer
-				//if(i==1)printf("%g+%gX%g+%g\t", wt[IDX2C(i, j, lay.iNeuronQty+1)].x, wt[IDX2C(i, j, lay.iNeuronQty+1)].y, oldOut[j].x, oldOut[j].y);
-				//newOut[i]=CxAddCxUT(newOut[i],CxMultiplyCxUT( wt[IDX2C(i, j, lay.iNeuronQty+1)] , oldOut[j]));
-				newOut[i]=CxAddCxUT(newOut[i],CxMultiplyCxUT( devNet.Wt[IDX2C(devNet.iWeightOfst[L]+i, j, devNet.iNeuronQTY[L])], oldOut[j]));
-			}
-
-
-			//if(i==1)printf("\nskEMTL%d| %g+%g -> %g+%g\n", L, newOut[i].x, newOut[i].y, CxActivateUT(newOut[i]).x, CxActivateUT(newOut[i]).y);
-			//if(i==1)printf("\n");
-
-			// ACTIVATE //
-			newOut[i]=CxActivateUT( newOut[i] , devNet );
-		
-
-			//printf("%f+%f,%d ", newOut[i].x, newOut[i].y, i);		
-		
-		
+	// do reduction in shared mem
+	for(unsigned int s=blockDim.x/2; s>0; s>>=1) {
+		if (tid < s) {
+			sdata[tid] += sdata[tid + s];
 		}
-		
-		
-		//printf("\n");
-	
-	
+		__syncthreads();
 	}
-	
-	////end midtop layers
+
+	// write result for this block to global mem
+	if (tid == 0) devdAccumSE = sdata[0];
 }
 
-
-__device__ void subkOutputConvertUT(int lSample)
-{/// converts complex NN output layer values to evaluated sample outputs //sam refs removed 11/6
-	//int s=lSample; //replace for-loop domain with requested sample index
-	int iLastLayer=devNet.iLayerQTY-1;
-	//struct rohanSample& sam = devLearn.rSample[s];
-	long ROWLEN=devLearn.iOutputQty+1;
-	struct rohanLayer& top = devNet.gpuLayer[iLastLayer];
-	
-	//printf("%ddev|", lSample);
-	
-	if (devLearn.iContOutputs){
-		for (int i=0; i<=devLearn.iOutputQty; ++i){ // continuous conversion begins here 
-			devLearn.gpudYEval[IDX2C( i, lSample, ROWLEN )]=FUnitCxUT(top.gpuZOutputs[i])*devNet.iSectorQty; // cx output is converted to angle [0,1), then multiplied by k, then stored with sample
-			devLearn.gpuYEval[IDX2C( i, lSample, ROWLEN )]=top.gpuZOutputs[i]; // unconverted cx output is also stored with sample
-			
-			//printf("%g+%g\t",top.gpuZOutputs[i].x, top.gpuZOutputs[i].y);
-		}
-	}
-	else{
-		for (int i=0; i<=devLearn.iOutputQty; ++i){ // discrete conversion starts here
-			devLearn.gpudYEval[IDX2C( i, lSample, ROWLEN )]=(double)floor(FUnitCxUT(top.gpuZOutputs[i])*devNet.iSectorQty); // cx output is converted to angle and multiplied by k, but then the fraciton is dropped before storing
-			devLearn.gpuYEval[IDX2C( i, lSample, ROWLEN )]=top.gpuZOutputs[i];
-		}
-	}
-
-	//printf("\n");
-
-	// end output convert
-}
 
 __device__ double FUnitCxUT(const cuDoubleComplex A)
 {/// returns the unitary angle of A in non-negative values [0,1)
@@ -1197,18 +1167,18 @@ __device__ double atomicAdd(double* address, double val)
 	return __longlong_as_double(old);
 }
 
-__device__ void __checksum(char * sLabel)
-{
-	if(threadIdx.x==0)printf("%s\n", sLabel );
-	if(threadIdx.x==0)printf("Dall= %08lX\n", subkCrc32buf((char*)(devNet.Deltas), MAXNEURONS * 16) );
-	if(threadIdx.x==0)printf("Sall= %08lX\n", subkCrc32buf((char*)(devNet.Signals), MAXNEURONS * 16) );
-	if(threadIdx.x==0)printf("Wall= %08lX\n", subkCrc32buf((char*)(devNet.Wt), MAXWEIGHTS * 16) );
-	if(threadIdx.x==0)printf("gD1== %08lX %d:%d\n", subkCrc32buf((char*)&devNet.Deltas[devNet.iNeuronOfst[1]], devNet.iNeuronQTY[1] * 16) , devNet.iNeuronOfst[1] , devNet.iNeuronQTY[1] );
-	if(threadIdx.x==0)printf("gD2== %08lX %d:%d\n", subkCrc32buf((char*)&devNet.Deltas[devNet.iNeuronOfst[2]], devNet.iNeuronQTY[2] * 16) , devNet.iNeuronOfst[2] , devNet.iNeuronQTY[2] );
-	if(threadIdx.x==0)printf("gS1== %08lX %d:%d\n", subkCrc32buf((char*)&devNet.Signals[devNet.iNeuronOfst[1]], devNet.iNeuronQTY[1] * 16) , devNet.iNeuronOfst[1] , devNet.iNeuronQTY[1] );
-	if(threadIdx.x==0)printf("gS2== %08lX %d:%d\n", subkCrc32buf((char*)&devNet.Signals[devNet.iNeuronOfst[2]], devNet.iNeuronQTY[2] * 16) , devNet.iNeuronOfst[2] , devNet.iNeuronQTY[2] );
-	if(threadIdx.x==0)printf("gW1== %08lX %d:%d\n", subkCrc32buf((char*)&devNet.Wt[devNet.iWeightOfst[1]], devNet.iNeuronQTY[1] * 16) , devNet.iWeightOfst[1] , devNet.iWeightQTY[1] );
-	if(threadIdx.x==0)printf("gW2== %08lX %d:%d\n", subkCrc32buf((char*)&devNet.Wt[devNet.iWeightOfst[2]], devNet.iWeightQTY[2] * 16) , devNet.iWeightOfst[2] , devNet.iWeightQTY[2] );
-}
+//__device__ void __checksum(char * sLabel)
+//{
+//	if(threadIdx.x==0)printf("%s\n", sLabel );
+//	if(threadIdx.x==0)printf("Dall= %08lX\n", subkCrc32buf((char*)(devNet.Deltas), MAXNEURONS * 16) );
+//	if(threadIdx.x==0)printf("Sall= %08lX\n", subkCrc32buf((char*)(devNet.Signals), MAXNEURONS * 16) );
+//	if(threadIdx.x==0)printf("Wall= %08lX\n", subkCrc32buf((char*)(devNet.Wt), MAXWEIGHTS * 16) );
+//	if(threadIdx.x==0)printf("gD1== %08lX %d:%d\n", subkCrc32buf((char*)&devNet.Deltas[devNet.iNeuronOfst[1]], devNet.iNeuronQTY[1] * 16) , devNet.iNeuronOfst[1] , devNet.iNeuronQTY[1] );
+//	if(threadIdx.x==0)printf("gD2== %08lX %d:%d\n", subkCrc32buf((char*)&devNet.Deltas[devNet.iNeuronOfst[2]], devNet.iNeuronQTY[2] * 16) , devNet.iNeuronOfst[2] , devNet.iNeuronQTY[2] );
+//	if(threadIdx.x==0)printf("gS1== %08lX %d:%d\n", subkCrc32buf((char*)&devNet.Signals[devNet.iNeuronOfst[1]], devNet.iNeuronQTY[1] * 16) , devNet.iNeuronOfst[1] , devNet.iNeuronQTY[1] );
+//	if(threadIdx.x==0)printf("gS2== %08lX %d:%d\n", subkCrc32buf((char*)&devNet.Signals[devNet.iNeuronOfst[2]], devNet.iNeuronQTY[2] * 16) , devNet.iNeuronOfst[2] , devNet.iNeuronQTY[2] );
+//	if(threadIdx.x==0)printf("gW1== %08lX %d:%d\n", subkCrc32buf((char*)&devNet.Wt[devNet.iWeightOfst[1]], devNet.iNeuronQTY[1] * 16) , devNet.iWeightOfst[1] , devNet.iWeightQTY[1] );
+//	if(threadIdx.x==0)printf("gW2== %08lX %d:%d\n", subkCrc32buf((char*)&devNet.Wt[devNet.iWeightOfst[2]], devNet.iWeightQTY[2] * 16) , devNet.iWeightOfst[2] , devNet.iWeightQTY[2] );
+//}
 
 #endif

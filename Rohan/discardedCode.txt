@@ -1,0 +1,781 @@
+int cRamp::LetWriteWeights(struct rohanContext& rSes)
+{mIDfunc/// dump ASCII weight values to disk
+	int lReturn;
+	char sLog[255], sFileName[255];
+	FILE *fileOutput; // File handle for output
+	
+	//lReturn=AsciiFileHandleWrite(rSes.sRohanVerPath, "weightdump.txt", &fileOutput);
+	lReturn=GetFileHandle(rSes.sRohanVerPath, "weightdump.txt", 'w', 'a', &fileOutput);
+	AsciiWeightDump(rSes, fileOutput); 
+	sprintf(sFileName, "%sWeight%d.txt", rSes.sSesName, (int)(rSes.dRMSE*100) ); //(int)(rSes.dDevRMSE*100)
+	
+	sprintf(sLog, "%d weights writen to %s\\%s", lReturn, rSes.sRohanVerPath, sFileName ); // document success and filename
+	Barge->RLog(rSes, 1, sLog);
+	sprintf(sLog, "product=%s", sFileName);
+	Barge->RLog(rSes, 2, sLog);
+	Barge->RLog(rSes, 0, __FUNCTION__);
+	return lReturn;
+}
+
+int cRamp::AsciiWeightDump(struct rohanContext& rSes, FILE *fileOutput)
+{mIDfunc
+/// outputs values from .wgt files as ASCII text
+/// weights are arranged in network order 8 bytes of real, 8 bytes of imaginary
+	int lReturnValue=0;
+
+	fprintf(fileOutput, "REAL\tIMAGINARY\tLAYER\tNEURON\tINPUT\n");
+	struct rohanNetwork& Net = *rSes.rNet;
+	
+	for (int LAY=1; LAY<Net.iLayerQTY; ++LAY){
+		int iNeuronQTY=Net.iNeuronQTY[LAY];
+		int iSignalQTY=Net.iDendrtQTY[LAY]; // signal qty depends on size of previous layer
+		for (int k=1; k < iNeuronQTY; ++k){ // no weights for neuron 0
+			for (int i=0; i<iSignalQTY; ++i){ //walk weights on inputs from previous layer
+				cuDoubleComplex& way = Net.Wt[IDX2C( Net.iWeightOfst[LAY] + i, k, iSignalQTY )];
+				++lReturnValue;
+				fprintf(fileOutput, "%f\t%f\t%d\t%d\t%d\n", way.x, way.y, LAY, k, i);
+			}
+		}
+	}
+	fclose(fileOutput);
+	Barge->RLog(rSes, 0, __FUNCTION__);
+	return lReturnValue;
+}
+
+
+int cTeam::GetEvalSingleSample( struct rohanContext& rSes, int lSampleIdxReq, char chMethod)
+{mIDfunc/*! calculates NN outputs for a given sample with GPU method */
+	if(chMethod=='c')
+		return cuEvalSingleSampleBeta(rSes, lSampleIdxReq, *rSes.rNet, 0, rSes.rNet->Signals, rSes.rNet->Zs, rSes.rNet->Wt, rSes.rLearn->cdcXInputs, rSes.rLearn->cdcYEval, rSes.rLearn->dYEval);
+	else // d for GPU device XX
+		return 0;////return devEvalSingleSample(rSes, lSampleIdxReq);
+}
+
+
+int cDrover::AskSampleSetName(struct rohanContext& rSes)
+{mIDfunc /// chooses the learning set to be worked with Ante-Loop
+	int iReturn=0; 
+	//rSes.rLearn->bContInputs=false;
+	//rSes.rLearn->iContOutputs=(int)false;
+	//cout << "Samples treated as discrete or continuous by fractionality. XX" << endl;
+
+	printf("Enter 0 for 10K-set, 9-36-1 weights\n\t 1 for 3-set, 331 weights\n\t 2 for 150-set, no wgts\n\t 3 for 4-set, 2x21 wgts\n\t 4 for 2-1 rand weights");
+	printf("\n\t 5 for 416 samples x 200 inputs\n\t 6 for 10k-set, 9-45-1 weights\n\t 7 for 10k-set, 9-54-1 weights\n");
+	std::cin >> gDebugLvl;
+	switch ( gDebugLvl % 10) {
+		case 0:
+		  strcpy(rSes.sLearnSet, "AirplanePsDN1W3S10k.txt");
+		  break;
+		case 1:
+		  strcpy(rSes.sLearnSet, "trivial3331.txt");
+		  break;
+		case 2:
+		  strcpy(rSes.sLearnSet, "iris.txt");
+		  break;
+		case 3:
+		  strcpy(rSes.sLearnSet, "trivial221.txt");
+		  break;
+		case 4:
+		  strcpy(rSes.sLearnSet, "trivial3.txt");	
+		  break;
+		case 5:
+		  strcpy(rSes.sLearnSet, "PC-63-32-200-LearnSet.txt");
+		  break;
+		case 6:
+		  strcpy(rSes.sLearnSet, "LenaPsDN2W3S10k.txt");
+		  break;
+		case 7:
+		  strcpy(rSes.sLearnSet, "LenaPsUN2W3S10k.txt");
+		  break;
+		default:
+		  strcpy(rSes.sLearnSet, "iris.txt");
+		  break;
+	}
+	gDebugLvl/=10; // drop final digit
+	if (gDebugLvl) fprintf(stderr, "Debug level is %d.\n", gDebugLvl);
+	return iReturn;
+}
+
+
+int cDrover::LetInteractiveEvaluation(struct rohanContext& rSes)
+{mIDfunc /// allows user to ask for different number of samples to be evaluated
+	int iReturn=0, iSelect=1;
+	
+	while(iSelect){
+		iSelect=DisplayMenu(50, rSes);
+		if (iSelect==1) {rSes.iSaveInputs=(rSes.iSaveInputs ? false: true); }
+		if (iSelect==2) {rSes.iSaveOutputs=(rSes.iSaveOutputs ? false: true); }
+		if (iSelect==3) {rSes.iSaveSampleIndex=(rSes.iSaveSampleIndex ? false: true); }
+		if (iSelect==4) {printf("Enter requested sample qty\n");std::cin >> rSes.lSampleQtyReq;
+							if(rSes.lSampleQtyReq<1 || rSes.lSampleQtyReq > rSes.rLearn->lSampleQty)
+								rSes.lSampleQtyReq=rSes.rLearn->lSampleQty;} 
+		if (iSelect==5) { // serial values are computed and then displayed
+					++iReturn; 
+					boost::timer::auto_cpu_timer t;
+					Team->GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'H');
+					printf("%s: first %d samples requested\nRMSE= %f", rSes.sWeightSet, rSes.lSampleQtyReq, rSes.dLastRmseS);		
+		}
+		if (iSelect==6) { // asynchronous kernel launch
+					++iReturn;
+					// device values are computed and then displayed
+					//Team->LetEvalSet(rSes, 'D'); // eval on device
+					Team->GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'D');
+					printf("%s: first %d samples requested\nRMSE= %f", rSes.sWeightSet, rSes.lSampleQtyReq, rSes.dLastRMSE);		
+		}
+		if (iSelect==7) {printf("Enter blocks per kernel\n");std::cin >> rSes.iEvalBlocks;}
+		if (iSelect==8) {printf("Enter threads per block\n");std::cin >> rSes.iEvalThreads;}
+		if (iSelect==9) {Ramp->LetWriteEvals(rSes, *rSes.rLearn);} 
+		if (iSelect==0) {} // quit
+	}
+	return iReturn;
+}
+
+
+int cDrover::LetInteractiveLearning(struct rohanContext& rSes)
+{mIDfunc /// allows user to select learning thresholds
+	int iReturn=0, iSelect=1;
+	
+	while(iSelect){
+		iSelect=DisplayMenu(60, rSes);
+		if (iSelect==1) {printf("Enter desired RMSE for learning\n");std::cin >> rSes.dTargetRMSE;}
+		if (iSelect==2) {printf("Enter MAX allowable error per sample\n");std::cin >> rSes.dMAX;}
+		if (iSelect==3) {printf("Enter iterations per epoch\n");std::cin >> rSes.iEpochLength;}
+		if (iSelect==4) {printf("Enter samples requested\n");std::cin >> rSes.lSampleQtyReq;	 
+							if(rSes.lSampleQtyReq<2 || rSes.lSampleQtyReq > rSes.rLearn->lSampleQty)
+								rSes.lSampleQtyReq=rSes.rLearn->lSampleQty;} 
+		//if (iSelect==5) {} // synchronous kernel launch
+		if (iSelect==6) { // asynchronous kernel launch
+					++iReturn;
+							Team->LetTaut(rSes);
+							rSes.lSamplesTrainable=Team->LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, rSes.iEpochLength, 'D');
+		}
+		if (iSelect==7) {printf("Enter blocks per kernel\n");std::cin >> rSes.iBpropBlocks;}
+		if (iSelect==8) {printf("Enter threads per block\n");std::cin >> rSes.iBpropThreads;}
+		//if (iSelect==9) {} //
+		if (iSelect==0) {} // quit
+	}
+	return iReturn;
+}
+
+
+int cDrover::LetUtilities(struct rohanContext& rSes)
+{mIDfunc /// allows user to select learning thresholds
+	int iReturn=0, iSelect=1;
+	int iEpoch=rSes.iEpochLength;
+	int iSampleQtyReq=rSes.lSampleQtyReq;
+	int iBpropBlocks=rSes.iBpropBlocks;
+	int iBpropThreads=rSes.iBpropThreads;
+	
+	while(iSelect){
+		iSelect=DisplayMenu(90, rSes);
+		if (iSelect==1) {
+			char afname[100]="", bfname[100]="", 
+				lineIn[255], *tok, *cSample;
+			FILE * ASCIN, * BINOUT; cuDoubleComplex way;
+			cout << "Enter name of .txt file to convert to .wgt:" << endl;
+			cin >> bfname;
+			strcat(afname, bfname); strcat(afname, ".txt"); strcat(bfname, ".wgt");
+			//Barge->AsciiFileHandleRead( rSes, afname, &ASCIN );
+			Ramp->GetFileHandle( rSes.sRohanVerPath, afname, 'r', 'a', &ASCIN );
+			//Barge->BinaryFileHandleWrite( bfname, &BINOUT );
+			Ramp->GetFileHandle( rSes.sRohanVerPath, bfname, 'w', 'b', &BINOUT );
+			#define MAX_REC_LEN 65536 /* Maximum size of input buffer */
+			while(fgets(lineIn, MAX_REC_LEN, ASCIN)) { //each line is read in turn
+				cSample = _strdup(lineIn);
+				printf("%s", cSample); 
+				tok=strtok( cSample , " ,\t" ); way.x=atof( tok ); 
+				tok=strtok( NULL, " ,\t" ); way.y=atof( tok );
+				printf("%f+%f\n", way.x, way.y);
+				fwrite( &(way.x) , sizeof(double), 1, BINOUT);
+				fwrite( &(way.y) , sizeof(double), 1, BINOUT);
+			}
+			fclose(ASCIN);
+			fclose(BINOUT);
+		}
+		if (iSelect==2) {printf("Enter MAX allowable error per sample\n");std::cin >> rSes.dMAX;}
+		if (iSelect==5) {Team->CUDAShowProperties(rSes, rSes.iMasterCalcHw, stdout);}
+		if (iSelect==6) {printf("Enter iterations per epoch\n");std::cin >> rSes.iEpochLength;}
+		if (iSelect==7) {printf("Enter samples requested\n");std::cin >> rSes.lSampleQtyReq;} //
+		if (iSelect==8) {printf("Enter blocks per kernel\n");std::cin >> rSes.iBpropBlocks;}
+		if (iSelect==9) {printf("Enter threads per block\n");std::cin >> rSes.iBpropThreads;}
+		if (iSelect==0) {} // quit
+	}
+	return iReturn;
+}
+
+
+int cDrover::DisplayMenu(int iMenuNum, struct rohanContext& rSes)
+{mIDfunc
+	char a='.';
+	//refresh RMSE
+	//cuEvalNNLearnSet(rSes);
+	//CalcRmseSerial(rSes, rSes.iOutputFocus);
+	
+	//list menu items
+	if(iMenuNum==0){
+		printf("\n1 - Label session \"%s\"", rSes.sSesName);
+		printf("\n2 X Network topology setup");
+		printf("\n3 / Sample set load");
+		printf("\n4 - Weight set load");
+		printf("\n5 - Evaluation Feed Forward");
+		printf("\n6 - Learning");
+		printf("\n7 - Save weights");
+		printf("\n8 - Randomize weights");
+		printf("\n9 - Utilities");
+		printf("\n0 - Quit");
+		MenuBase(rSes);
+	}
+	if(iMenuNum==50){
+		printf("\n1 - Include inputs: %d", rSes.iSaveInputs);
+		printf("\n2 - Include outputs: %d", rSes.iSaveOutputs);
+		printf("\n3 - Include sample index: %d", rSes.iSaveSampleIndex);
+		printf("\n4 - change Samples used: %d", rSes.lSampleQtyReq);
+		printf("\n5 - host serial evaluation");
+		printf("\n6 - Asynchronous device commence");
+		printf("\n7 - change Blocks per kernel: %d", rSes.iEvalBlocks);
+		printf("\n8 - change Threads per block: %d", rSes.iEvalThreads);
+		printf("\n9 - Save evals");
+		printf("\n0 - Quit");
+		MenuBase(rSes);
+	}
+	if(iMenuNum==60){
+		printf("\n1 - change Target RMSE: % #3.3g", rSes.dTargetRMSE);
+		printf("\n2 - change MAX error: % #3.3g", rSes.dMAX);
+		printf("\n3 - change Epoch length: %d", rSes.iEpochLength);
+		printf("\n4 - change Samples used: %d", rSes.lSampleQtyReq);
+		printf("\n5 X Synchronous commence");
+		printf("\n6 - Asynchronous commence");
+		printf("\n7 - change Blocks per kernel: %d", rSes.iBpropBlocks);
+		printf("\n8 - change Threads per block: %d", rSes.iBpropThreads);
+		printf("\n9 X ");
+		printf("\n0 - Quit");
+		MenuBase(rSes);
+	}
+	if(iMenuNum==90){
+		printf("\n1 - convert .txt list of weights to .wgt");
+		printf("\n2 X RMSE/evaluate test");
+		printf("\n3 X classification test");
+		printf("\n4 X backpropagation test (weights are restored)");
+		printf("\n5 - Show CUDA properties ");
+		printf("\n6 - change Epoch length: %d", rSes.iEpochLength);
+		printf("\n7 - change Samples used: %d", rSes.lSampleQtyReq);
+		printf("\n8 - change Blocks per kernel: %d", rSes.iBpropBlocks);
+		printf("\n9 - change Threads per block: %d", rSes.iBpropThreads);
+		printf("\n0 - Quit");
+		MenuBase(rSes);
+	}
+	printf("\n");
+	// http://www.cplusplus.com/doc/ascii/
+	while(a<'0'||a>'9')
+		a=_getch();
+	return ((int)a)-48;
+}
+
+
+int cDrover::MenuBase(struct rohanContext& rSes)
+{mIDfunc /// displays the base information common to each/most menus
+		//printf("\n %s %d samples MAX %f, %d trainable", rSes.sLearnSet, rSes.rLearn->lSampleQty, rSes.dMAX, 
+			//TrainNNThresh(rSes, false));
+		//printf("\nRMSE: D %f, Y %f/%f ", rSes.dTargetRMSE, rSes.dHostRMSE, rSes.dDevRMSE);
+		for(int i=0;i<rSes.rNet->iLayerQTY;++i)
+			printf("L%d %d; ", i, rSes.rNet->rLayer[i].iNeuronQty);
+		printf("%d sectors ", rSes.rNet->iSectorQty);
+		if (rSes.bRInJMode) printf("ReverseInput "); 
+	return 1;
+}
+
+int cDrover::AskSessionName(struct rohanContext& rSes)
+{mIDfunc /// accepts keyboard input to define the name of the session, which will be used to name certain output files.
+	cout << "\nEnter a session name: ";
+	cin >> rSes.sSesName; 
+
+	return 1;
+}
+
+
+int cDrover::GetWeightSet(struct rohanContext& rSes)
+{mIDfunc /// chooses and loads the weight set to be worked with XX YY ZZ
+	int iReturn=0; 
+	char sWeightSet[254];
+	FILE *fileInput;
+	
+	cout << "Enter name of binary weight set: ";
+	std::cin.clear();
+	std::cin >> sWeightSet;
+	strcat(sWeightSet, ".wgt");
+
+	// File handle for input
+	//iReturn=Barge->BinaryFileHandleRead(rSes, sWeightSet, &fileInput);
+	iReturn=Ramp->GetFileHandle(rSes.sRohanVerPath, sWeightSet, 'r', 'b', &fileInput);
+	if (iReturn==0) // unable to open file
+		++rSes.iErrors;
+	else{ // file opened normally
+		// file opening and reading are separated to allow for streams to be added later
+		iReturn=Ramp->cuNNLoadWeights(rSes, fileInput); // reads weights into layered structures
+		if (iReturn) {
+			printf("%d weights read.\n", iReturn);
+			Barge->LayersToBlocks(rSes); //, *rSes.rNet);
+		}
+		else {
+			printf("No Weights Read\n");
+			iReturn=0;
+		}
+	}
+	printf("\n");
+	return iReturn;
+}
+
+
+
+int cDrover::GetNNTop(struct rohanContext& rSes)
+{mIDfunc /// sets up network poperties and data structures for use
+	char sNeuronsPerLayer[254];
+	int iSectorQty, iInputQty;
+
+	cout << "Enter # of sectors (0 to return): ";
+	cin >> iSectorQty;
+	if(iSectorQty){
+		cout << "Enter # of inputs (0 to return): ";
+		cin >> iInputQty; // last chance to quit
+	}
+	if(iSectorQty && iInputQty) {
+		Barge->cuFreeNNTop(rSes); // release old network structures
+		rSes.rNet->iSectorQty=iSectorQty; // update sector qty
+		rSes.rNet->kdiv2=iSectorQty/2; // update sector qty
+		rSes.rLearn->iInputQty=iInputQty; // upsdate input qty
+		cout << "Enter numbers of neurons per layer separated by commas, \ne.g. 63,18,1 : ";
+		cin >> sNeuronsPerLayer;
+		Barge->cuMakeLayers(iInputQty, sNeuronsPerLayer, rSes); // make new layers
+		rSes.rNet->dK_DIV_TWO_PI = rSes.rNet->iSectorQty / TWO_PI; // Prevents redundant conversion operations
+		Barge->cuMakeNNStructures(rSes); // allocates memory and populates network structural arrays
+		cuRandomizeWeightsBlock(rSes); // populate newtork with random weight values
+		printf("Random weights loaded.\n");
+		printf("%d-valued logic sector table made.\n", cuSectorTableMake(rSes));
+		printf("\n");
+		return rSes.rNet->iLayerQTY;
+	}
+	else
+		return 999;
+}
+
+double cTeam::RmseEvaluateTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iSampleQty)
+{mIDfunc /// runs tests for RMSE and evaluation on experimental and control models
+	int iDifferent=0, iOldSampleQtyReq=rSes.lSampleQtyReq; double dDifferent=0.0; float fExpTime=0.0;
+
+	if(iSampleQty>0)
+		rSes.lSampleQtyReq=iSampleQty; // change sample set size for just this test
+	else 
+		rSes.lSampleQtyReq=rSes.lSampleQty;
+	boost::timer::cpu_timer tCtrl, tExp;
+	boost::timer::cpu_times elapCtrl, elapExp;
+		// perform a warm-up host eval to eliminate the always-longer first one, return true number of samples, prepare timer to resume @ 0.0;
+		//Barge->RLog(rSes, 0, "WARMUP");
+			GetRmseNN(rSes, rSes.iOutputFocus, 'R', cControlModel);
+		tCtrl.start();
+		tCtrl.stop();
+			
+			GetRmseNN(rSes, rSes.iOutputFocus, 'R', cExpModel);
+			
+		tExp.start();
+		tExp.stop();
+		char sLog0[80]; sprintf(sLog0, "BEGIN RMSE/EVALUATE TEST: %d TRIALS, %d SAMPLES", iTrials, rSes.lSampleQtyReq);
+		Barge->RLog( rSes, 0, sLog0);
+		//printf("-------------------------------\n");
+	
+	for(int i=1; i<=iTrials; ++i){
+		//reset values
+		//rSes.dDevRMSE = rSes.dHostRMSE = 0.0;
+		// begin dev eval test
+		 
+		tExp.resume();
+			//printf(">>DEVICE: RMSE = %f\n", Team->GetRmseNN(rSes, iSampleQty));
+			GetRmseNN(rSes, rSes.iOutputFocus, 'R', cExpModel); // run on device with refreshed values
+		fExpTime+=gElapsedTime; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
+		tExp.stop();
+		 
+		// end dev eval test
+
+		//begin host eval test
+		//printf("HST:");
+		{
+			//boost::timer::auto_cpu_timer o;
+			tCtrl.resume();
+			GetRmseNN(rSes, 0, 'R', cControlModel); // update dHostRMSE
+			tCtrl.stop();
+		}
+		// end host eval test
+
+		iDifferent += OutputValidate(rSes);
+		//printf("BOTH: %d differences found on verify.\n", iDifferent);
+		dDifferent += GetLastRmse(rSes, cExpModel) - GetLastRmse(rSes, cControlModel);
+		//printf("BOTH: delta RMSE %f += %f - %f\n", dDifferent, rSes.dDevRMSE, rSes.dHostRMSE);
+		//printf("-------------------------------%d\n", i);
+	}
+	elapCtrl=tCtrl.elapsed();
+	elapExp =tExp.elapsed();
+	int64 denominator = iTrials*100000; // convert to tenths of milliseconds
+	int64 quotientCtrl = elapCtrl.wall / denominator;
+	int64 quotientExp  = elapExp.wall  / denominator;
+	double dAvgTimeHost = (double)quotientCtrl; 
+	double dAvgTimeDev = (double)quotientExp; 
+	char sLog1[255]; sprintf(sLog1, "Control    mean performance over %d runs: %.1f ms", iTrials, dAvgTimeHost/10);
+	char sLog2[255]; sprintf(sLog2, "Experiment mean performance over %d runs: %.1f ms", iTrials, fExpTime/iTrials);
+	char sLog3[255]; sprintf(sLog3, "%s\t%s\t%c", ( (iDifferent || abs(dDifferent)>.001 ) ? "EVALUATE FAIL" : "EVALUATE PASS" ), rSes.sNetString, rSes.cEngagedModel );
+	//printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
+	Barge->RLog(rSes, 0, sLog1);
+	Barge->RLog(rSes, 0, sLog2);
+	Barge->RLog(rSes, 0+ADMINF, sLog3);
+
+	rSes.lSampleQtyReq=iOldSampleQtyReq; // restore original sample set size just before exit
+	Barge->RLog(rSes, 0, __FUNCTION__);
+	return iDifferent+dDifferent;
+}
+
+
+int cTeam::ClassifyTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iSampleQty)
+{mIDfunc /// runs classification tests on both host and GPU
+	int iDeviceTrainable, iHostTrainable, iMargin=0, iOldSampleQtyReq=rSes.lSampleQtyReq; float fExpTime=0.0;
+
+	if(iSampleQty>0)
+		rSes.lSampleQtyReq=iSampleQty; // change sample set size just for this function
+	else 
+		rSes.lSampleQtyReq=rSes.lSampleQty;
+	boost::timer::cpu_timer tCtrl, tExp;
+	boost::timer::cpu_times elapCtrl, elapExp;
+		// perform a warm-up host eval to eliminate the always-longer first one, return true number of samples, prepare timer to resume @ 0.0;
+		//printf("WARMUP:\n");
+			GetRmseNN(rSes, rSes.iOutputFocus, 'E', cControlModel);
+		tCtrl.start();
+		tCtrl.stop();
+			 
+			GetRmseNN(rSes, rSes.iOutputFocus, 'R', cExpModel);// evaluation is now included in classification tests
+			 
+		tExp.start();
+		tExp.stop();
+	char sLog0[80]; sprintf(sLog0, "BEGIN CLASSIFY TEST: %d TRIALS, %d SAMPLES", iTrials, rSes.lSampleQtyReq);
+	Barge->RLog( rSes, 0, sLog0);
+	for(int i=1; i<=iTrials; ++i){
+		// begin trainable sample test DEVICE
+		LetTaut(rSes);
+		tExp.resume();
+			gKernelTimeTally=0.0; //reset global kernel time tally
+			// evaluation is now integrated in device classification tests
+			iMargin+=iDeviceTrainable=LetTrainNNThresh(rSes, 0, 'E', rSes.dTargetRMSE, rSes.iEpochLength, 'D');
+			fExpTime+=gKernelTimeTally; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
+		tExp.stop();
+		LetSlack(rSes);
+		{
+			tCtrl.resume();
+				cuEvalNNLearnSet(rSes); // evaluation is now included separately in host classification tests
+				iMargin -= iHostTrainable=TrainNNThresh(rSes, false);
+			tCtrl.stop();
+		}
+		iDeviceTrainable=iHostTrainable=0;
+	}
+
+	elapCtrl=tCtrl.elapsed();
+	elapExp =tExp.elapsed();
+	int64 denominator = iTrials*100000; // convert to tenths of milliseconds
+	int64 quotientCtrl = elapCtrl.wall / denominator;
+	int64 quotientExp  = elapExp.wall  / denominator;
+	double dAvgTimeHost = (double)quotientCtrl; 
+	double dAvgTimeDev = (double)quotientExp; 
+	
+	char sLog1[255]; sprintf(sLog1, "Control    mean performance over %d runs: %.1f ms", iTrials, dAvgTimeHost/10);
+	char sLog2[255]; sprintf(sLog2, "Experiment mean performance over %d runs: %.1f ms", iTrials, fExpTime/iTrials);
+	char sLog3[255]; sprintf(sLog3, "%s\t%s\t%c", ( iMargin ? "CLASSIFY FAIL" : "CLASSIFY PASS" ), rSes.sNetString, rSes.cEngagedModel );
+	//printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
+	Barge->RLog(rSes, 0, sLog1);
+	Barge->RLog(rSes, 0, sLog2);
+	Barge->RLog(rSes, 0+ADMINF, sLog3);
+	
+	rSes.lSampleQtyReq=iOldSampleQtyReq; // restore original sample set size just before exit
+	Barge->RLog(rSes, 0, __FUNCTION__);
+	return (iMargin);
+}
+
+
+double cTeam::BackPropTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iThreads, int iSampleQty)
+{mIDfunc /// runs tests for backward propagation on both host and GPU
+	double dDifferent=0.0; float fExpTime=0.0;
+	int iDeviceTrainable, iHostTrainable, iMargin=0, oldThreads=rSes.iBpropThreads, iOldSampleQtyReq=rSes.lSampleQtyReq; 
+
+	if(iSampleQty>0)
+		rSes.lSampleQtyReq=iSampleQty; // change sample set size just for this function
+	else 
+		rSes.lSampleQtyReq=rSes.lSampleQty;
+	boost::timer::cpu_timer tCtrl;//, tExp;
+	boost::timer::cpu_times elapCtrl;//, elapExp;
+	rSes.iBpropThreads=iThreads;
+		// perform a warm-up host eval to eliminate the always-longer first one, return true number of samples, prepare timer to resume @ 0.0;
+		// printf("WARMUP:\n");
+			GetRmseNN(rSes, 0, 'E', cControlModel);
+		tCtrl.start();
+		tCtrl.stop();
+			
+			GetRmseNN(rSes, rSes.iOutputFocus, 'R', cExpModel);// evaluation is now included in classification tests
+			 
+
+			char sLog0[80]; sprintf(sLog0, "BEGIN BACKPROP TEST: %d TRIALS, %d THREADS %d SAMPLES", iTrials, iThreads, rSes.lSampleQtyReq);
+	Barge->RLog( rSes, 0, sLog0);
+	LetTaut(rSes);
+	for(int i=1; i<=iTrials; ++i){
+		// begin BACKPROPagation test DEVICE
+			gKernelTimeTally=0.0; //reset global kernel time tally
+			// evaluation is now integrated in device classification tests
+			iMargin+=iDeviceTrainable=LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, 1, cExpModel); // backprop all samples, output usual, revise wts, target RMSE, epoch=single iteration YY change E to R
+			dDifferent += GetRmseNN(rSes, rSes.iOutputFocus, 'R', cExpModel);
+			fExpTime+=gKernelTimeTally; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
+		// end device test
+
+		// begin BACKPROPagation test HOST
+		{	
+			tCtrl.resume();
+				cuEvalNNLearnSet(rSes); // evaluation is now included separately in host classification tests
+				iMargin -= iHostTrainable=TrainNNThresh( rSes, true); // YY change false to true
+				dDifferent -= GetRmseNN(rSes, 0, 'R', cControlModel);
+			tCtrl.stop();
+		}
+		// end host test
+		iDeviceTrainable=iHostTrainable=0;
+	}
+	LetSlack(rSes);
+	elapCtrl=tCtrl.elapsed();
+	int64 denominator = iTrials*100000; // convert to tenths of milliseconds
+	int64 quotientCtrl = elapCtrl.wall / denominator;
+	double dAvgTimeHost = (double)quotientCtrl; 
+	rSes.iBpropThreads=oldThreads;
+	char sLog1[255]; sprintf(sLog1, "Host/Serial mean performance over %d runs: %.1f ms", iTrials, dAvgTimeHost/10); //converted from tenths of ms to full ms
+	char sLog2[255]; sprintf(sLog2, "Dev/CUDA    mean performance over %d runs: %.1f ms", iTrials, fExpTime/iTrials);
+	char sLog3[366]; sprintf(sLog3, "%s\t%s\t%c\tsu %.1fx", ( (iMargin || abs(dDifferent)>.01 ) ? "BACKPROP FAIL" : "BACKPROP PASS" ), rSes.sNetString, rSes.cEngagedModel, ((dAvgTimeHost/10)/(fExpTime/iTrials)) );
+	//printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
+	Barge->RLog(rSes, 0, sLog1);
+	Barge->RLog(rSes, 0, sLog2);
+	Barge->RLog(rSes, 0+ADMINF, sLog3);
+	
+	rSes.lSampleQtyReq=iOldSampleQtyReq; // restore original sample set size just before exit
+	Barge->RLog(rSes, 0, __FUNCTION__);
+	return (iMargin+dDifferent);
+}
+
+
+__device__ void subkRmseMT(int lSampleQtyReq, int o, int OUTROWLEN, double * dSqrErr)
+{/*! sums all SE values for oth input */
+	//	externalities 
+	//				write devdReturn, devdRMSE
+	//
+	//	may need to run in full warp quantities of threads
+	//	verified for 2 samples 5/23/12
+	
+	int row;//, OUTROWLEN=devLearn.iOutputQty+1; // prepare array index and width
+	int tIx = threadIdx.x + blockDim.x * blockIdx.x; // tIx is thread index over the kernel
+	int lTotalThreads = gridDim.x * blockDim.x; // total number of threads
+	
+	devdReturn[tIx]=0.0; // clear global mem accumulator; out of bound samples will remain at this value
+	for (int k=0; (row=k+tIx)<lSampleQtyReq; k+=lTotalThreads){ // advance thread qty samples each time, falling out if row is beyond bounds
+		devdReturn[tIx]+= dSqrErr[IDX2C( o, row, OUTROWLEN )]; // accumulate the delta squared for the indicated sample
+		//if(gDevDebug) printf("[%d]=%f\t", tIx, dSqrErr[IDX2C( o, row, OUTROWLEN )]);
+	}
+	//end linear accumulation, begin intra-block reduction
+	__syncthreads(); // crucial placement
+	
+	int j=blockDim.x/2;
+	while (j){
+		if (threadIdx.x < j || tIx+j < devLearn.lSampleQty){ // select for bottom half of threads in each block AND make sure that upper half is not beyond working samples
+			devdReturn[tIx] += devdReturn[tIx+j]; // add the top half values to their bottom half counterparts
+		}
+		__syncthreads(); // crucial placement
+		j /=2; // divide bottom half into halves and do it again
+	}
+	
+	// all threads' values in a given block are now accumulated in its 0th thread's devdReturn[s]
+	if(threadIdx.x==0){ // calling on each 0th thread
+		atomicAdd(&devdRMSE, devdReturn[tIx]); // accumulate each block's total atomically
+		//cuPrintf("devdReturn= %f\n", devdReturn[tIx]);
+	}	
+}
+
+
+__device__ void subkShowMeDiffSums( cuDoubleComplex * Sums, char cSymbol, int x1, int x2, int x3)
+{/// checks all elements of Sums against their corresponding XInputs and ZOutputs
+	for(int L=1; L<devNet.iLayerQTY; ++L){
+		for (int i=0; i<=devNet.rLayer[L].iNeuronQty; ++i){
+			double X = devNet.rLayer[L].ZOutputs[i].x - Sums[ devNet.iNeuronOfst[L]+i ].x;
+			double Y = devNet.rLayer[L].ZOutputs[i].y - Sums[ devNet.iNeuronOfst[L]+i ].y;
+			cuDoubleComplex delta = { X, Y };
+			double Z = CxAbsUT(delta);
+			if (Z>0.01){
+				printf("host%c ZOutput %d,%d Sums %d position %d,%d,%d = %f,%f\n", cSymbol, L, i, devNet.iNeuronOfst[L]+1, x1, x2, x3, X+Y, Z);
+				Sums[ devNet.iNeuronOfst[L]+i ] = devNet.rLayer[L].ZOutputs[i] ;
+			}
+		}
+	}
+	//return 0;
+}
+
+
+__device__ void subkShowMeResetSums( cuDoubleComplex * Sums)
+{/// checks all elements of Sums against their corresponding XInputs and ZOutputs
+	for(int L=0; L<devNet.iLayerQTY; ++L){
+		for (int i=0; i<=devNet.rLayer[L].iNeuronQty; ++i){
+			Sums[ devNet.iNeuronOfst[L]+i ] = devNet.rLayer[L].ZOutputs[i] ;
+		}
+	}
+	//return 0;
+}
+
+__device__ void subkEvalSingleSampleUT(int lSample)
+{	/*! here beginneth evaluation of sam. */
+
+	/*! layer zero (inputs) is special. */
+		subkConvertInputsUT( lSample);
+	 /*! middle and top layers. */
+		subkEvalMidTopLayersUT( lSample);
+	 /*! last layer is also special  IMPORTANT keep synchronized with cuEvalSingleOutput in rohan-learn.cpp. */
+		subkOutputConvertUT( lSample);
+	 /*! end of sample evaluation. */
+}
+
+__device__ void subkConvertInputsUT( int lSample)
+{/// converts sample inputs to complex NN input layer values //sam refs removed 11/6
+	/// layer zero (inputs) is special
+	/// virtual input neurons' outputs are network inputs converted to complex coords
+	//int s=lSample; //replace for-loop domain with requested sample index
+
+	int ROWLEN=devLearn.iInputQty+1;
+	
+	for (int i=0; i<ROWLEN; ++i){
+		devNet.gpuLayer[0].gpuZOutputs[i]=devLearn.gpuXInputs[IDX2C( i, lSample, ROWLEN )];
+
+
+		//if(i==1)printf("subkCI%d| %g+%g -> %g+%g\n", lSample, devNet.gpuLayer[0].gpuZOutputs[i].x, devNet.gpuLayer[0].gpuZOutputs[i].y, devLearn.gpuXInputs[IDX2C( i, lSample, ROWLEN )].x, devLearn.gpuXInputs[IDX2C( i, lSample, ROWLEN )].y);
+
+
+	}
+	// end convert inputs
+}
+
+__device__ void subkEvalMidTopLayersUT( int lSample)
+{/// number crunches the middle and top layers of an MLMVN 
+	//const cuDoubleComplex gpuZero = { 0, 0 };
+	//const cdcInit = { -999.0, 999.0 };
+
+	for (int L=1; L<devNet.iLayerQTY; ++L){
+		//printf("subkEvalMidTopLayersUT Layer %d\n%dX|", L, L);
+		//struct rohanLayer& lay = devNet.gpuLayer[L];
+		int iLastNeuron=devNet.gpuLayer[L].iNeuronQty; // size of current layer
+		int PL=L-1; // index of previous layer
+		int iLastSignal=devNet.gpuLayer[L].iDendriteQty; // weight qty depends on size of previous layer
+			//cuDoubleComplex*& wt = devNet.gpuLayer[L].gpuWeights;
+			cuDoubleComplex*& oldOut = devNet.gpuLayer[PL].gpuZOutputs;
+			cuDoubleComplex*& newOut = devNet.gpuLayer[L].gpuZOutputs;
+
+
+		/*for (int j=0; j<=iLastSignal; ++j)
+			printf("%f+%f,%d ", oldOut[j].x, oldOut[j].y, j);		
+		printf("\n%dZ|", L);*/
+			//printf("skEMTL%d| %g+%g ?= %g+%g\n", L, devNet.Wt[IDX2C(devNet.iWeightOfst[L]+1, 1, lay.iNeuronQty+1)].x, devNet.Wt[IDX2C(devNet.iWeightOfst[L]+1, 1, lay.iNeuronQty+1)].y, wt[IDX2C(1, 1, lay.iNeuronQty+1)].x, wt[IDX2C(1, 1, lay.iNeuronQty+1)].y);
+
+
+		for (int i=0; i<=iLastNeuron; ++i){ //Neuron zero is not skipped, its output should be 1+0i as a check
+			newOut[i]=gpuZero; //newOut[i].x=1; newOut[i].y=0;
+			for (int j=0; j<=iLastSignal; ++j){ //walk weights on inputs from previous layer
+				//if(i==1)printf("%g+%gX%g+%g\t", wt[IDX2C(i, j, lay.iNeuronQty+1)].x, wt[IDX2C(i, j, lay.iNeuronQty+1)].y, oldOut[j].x, oldOut[j].y);
+				//newOut[i]=CxAddCxUT(newOut[i],CxMultiplyCxUT( wt[IDX2C(i, j, lay.iNeuronQty+1)] , oldOut[j]));
+				newOut[i]=CxAddCxUT(newOut[i],CxMultiplyCxUT( devNet.Wt[IDX2C(devNet.iWeightOfst[L]+i, j, devNet.iNeuronQTY[L])], oldOut[j]));
+			}
+
+
+			//if(i==1)printf("\nskEMTL%d| %g+%g -> %g+%g\n", L, newOut[i].x, newOut[i].y, CxActivateUT(newOut[i]).x, CxActivateUT(newOut[i]).y);
+			//if(i==1)printf("\n");
+
+			// ACTIVATE //
+			newOut[i]=CxActivateUT( newOut[i] , devNet );
+		
+
+			//printf("%f+%f,%d ", newOut[i].x, newOut[i].y, i);		
+		
+		
+		}
+		
+		
+		//printf("\n");
+	
+	
+	}
+	
+	////end midtop layers
+}
+
+
+__device__ void subkOutputConvertUT(int lSample)
+{/// converts complex NN output layer values to evaluated sample outputs //sam refs removed 11/6
+	//int s=lSample; //replace for-loop domain with requested sample index
+	int iLastLayer=devNet.iLayerQTY-1;
+	//struct rohanSample& sam = devLearn.rSample[s];
+	long ROWLEN=devLearn.iOutputQty+1;
+	struct rohanLayer& top = devNet.gpuLayer[iLastLayer];
+	
+	//printf("%ddev|", lSample);
+	
+	if (devLearn.iContOutputs){
+		for (int i=0; i<=devLearn.iOutputQty; ++i){ // continuous conversion begins here 
+			devLearn.gpudYEval[IDX2C( i, lSample, ROWLEN )]=FUnitCxUT(top.gpuZOutputs[i])*devNet.iSectorQty; // cx output is converted to angle [0,1), then multiplied by k, then stored with sample
+			devLearn.gpuYEval[IDX2C( i, lSample, ROWLEN )]=top.gpuZOutputs[i]; // unconverted cx output is also stored with sample
+			
+			//printf("%g+%g\t",top.gpuZOutputs[i].x, top.gpuZOutputs[i].y);
+		}
+	}
+	else{
+		for (int i=0; i<=devLearn.iOutputQty; ++i){ // discrete conversion starts here
+			devLearn.gpudYEval[IDX2C( i, lSample, ROWLEN )]=(double)floor(FUnitCxUT(top.gpuZOutputs[i])*devNet.iSectorQty); // cx output is converted to angle and multiplied by k, but then the fraciton is dropped before storing
+			devLearn.gpuYEval[IDX2C( i, lSample, ROWLEN )]=top.gpuZOutputs[i];
+		}
+	}
+
+	//printf("\n");
+
+	// end output convert
+}
+
+int cuBackpropLearnSet(rohanContext& rSes, int lSampleQtyReq, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval )
+{ mIDfunc /*! propagates adjustment of weights backwards preceeding layers from the chosen network output. */
+	// lSampleQty is sample qty requested
+	int lSubmitted=0;
+	if(lSampleQtyReq < 1 || lSampleQtyReq > rSes.rLearn->lSampleQty) // if requested qty is out of bounds, use max
+		lSampleQtyReq=rSes.rLearn->lSampleQty;
+	for(int s=0; s<rSes.rLearn->lSampleQty; ++s){ // submit all samples requestee, one at a time
+		cuBackpropSingleSample(rSes, s,  Net, Signals, Zs, Wt, Deltas, XInputs, YEval, dYEval );
+		++lSubmitted;
+	}
+
+	return lSubmitted; // return qty of samples submitted
+}
+
+
+int cBarge::cuMessage(cublasStatus csStatus, char *sName, char *sCodeFile, int iLine, char *sFunc)
+{	
+	char *sMsg;
+
+	switch (csStatus) {
+		case CUBLAS_STATUS_SUCCESS: sMsg=_strdup("operation completed successfully");
+			break;
+		case CUBLAS_STATUS_NOT_INITIALIZED: sMsg=_strdup("library not initialized");
+			break;
+		case CUBLAS_STATUS_ALLOC_FAILED: sMsg=_strdup("resource allocation failed");
+			break;
+		case CUBLAS_STATUS_INVALID_VALUE: sMsg=_strdup("unsupported numerical value was passed to function");
+			break;
+		case CUBLAS_STATUS_ARCH_MISMATCH: sMsg=_strdup("function requires an architectural feature absent from the architecture of the device");
+			break;
+		case CUBLAS_STATUS_MAPPING_ERROR: sMsg=_strdup("access to GPU memory space failed");
+			break;
+		case CUBLAS_STATUS_EXECUTION_FAILED: sMsg=_strdup("GPU program failed to execute");
+			break;
+		case CUBLAS_STATUS_INTERNAL_ERROR: sMsg=_strdup("an internal operation failed");
+			break;
+		default: sMsg=_strdup("unknown response");
+	}
+	fprintf(stderr,"%s %s line %i: CUBLAS %s: %s\n", sCodeFile, sFunc, iLine, sMsg, sName);
+	return 0;
+}

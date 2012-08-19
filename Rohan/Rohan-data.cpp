@@ -21,53 +21,6 @@ int cuSectorTableMake(struct rohanContext &rSes)
 }
 
 
-int cuRandomizeWeightsBlock(struct rohanContext &rSes)
-{mIDfunc /// generates random weights in [-1..0..1]
-	int lReturnValue=0;
-
-	struct rohanNetwork& Net = *rSes.rNet;
-	for (int LAY=1; LAY<Net.iLayerQTY; ++LAY){
-		int iNeuronQTY=Net.iNeuronQTY[LAY];
-		int iSignalQTY=Net.iDendrtQTY[LAY]; // signal qty depends on size of previous layer
-		for (int k=1; k < iNeuronQTY; ++k){ // no randomization for neuron 0
-			for (int i=0; i<iSignalQTY; ++i){ //walk weights on inputs from previous layer
-				cuDoubleComplex& way = Net.Wt[IDX2C( Net.iWeightOfst[LAY] + i, k, iSignalQTY )];
-				++lReturnValue;
-				way.x=1.0-(double)(2*rand()/RAND_MAX); // range of values is -1.0 to +1.0
-				way.y=1.0-(double)(2*rand()/RAND_MAX); // range of values is -1.0 to +1.0
-			}
-		}
-	}
-	printf("%d pseudo-random weights on [-1..0..1]\n",lReturnValue);
-	
-	return lReturnValue;
-}
-
-
-	
-int cuRandomizeWeightsLayer(struct rohanContext &rSes)
-{mIDfunc /// generates random weights in [-1..0..1]
-	int lReturnValue=0;
-
-	for (int j=1; j < rSes.rNet->iLayerQTY; ++j){ //no weights for layer 0
-		struct rohanLayer& lay = rSes.rNet->rLayer[j];
-		for (int k=1; k <= lay.iNeuronQty; ++k){
-			printf("\n[%d,%d] ",j,k);
-			for (int i=0; i <= lay.iDendriteQty; ++i){
-				cuDoubleComplex& way = lay.Weights[IDX2C(i, k, lay.iDendriteQty+1)];
-				++lReturnValue;
-				way.x=1.0-(double)(2*rand()/RAND_MAX); // range of values is -1.0 to +1.0
-				way.y=1.0-(double)(2*rand()/RAND_MAX); // range of values is -1.0 to +1.0
-				printf("%d.", i);
-			}
-		}
-	}
-	printf("%d pseudo-random weights on [-1..0..1]\n",lReturnValue);
-
-	return lReturnValue;
-}
-
-
 cuDoubleComplex CxActivate(const cuDoubleComplex Z, struct rohanNetwork& Net)
 {/// applies ContActivation or discrete activation function to cx neuron output and returns Phi(Z)
 	/// This fn should be phased out in favor of a GPU device vector based fn
@@ -88,7 +41,7 @@ cuDoubleComplex CxActivate(const cuDoubleComplex Z, struct rohanNetwork& Net)
 }
 
 
-int cuEvalNNLearnSet(struct rohanContext& rSes)
+int cuEvalNNLearnSet(struct rohanContext& rSes, int o)
 {mIDfunc
 /*! This will apply a MLMVN weight set to each sample of a learning set in turn and record the resulting final output for each.
  *  Discrete inputs and outputs are used. Real integers are convered via K-valued logic to complex coordinates,
@@ -102,7 +55,7 @@ int cuEvalNNLearnSet(struct rohanContext& rSes)
 	// here beginneth ye main duty loop
 	{
 		for (int s=0; s<rSes.lSampleQtyReq; s+=1){
-			lSamplesEvaled+=cuEvalSingleSampleBeta(rSes, s, *rSes.rNet, 0, rSes.rNet->Signals, rSes.rNet->Zs, rSes.rNet->Wt, rSes.rLearn->cdcXInputs, rSes.rLearn->cdcYEval, rSes.rLearn->dYEval); // fixed-length method working 2/14/12
+			lSamplesEvaled+=cuEvalSingleSampleBeta(rSes, s, *rSes.rNet, *rSes.rLearn, o, rSes.rNet->Signals, rSes.rNet->Zs, rSes.rNet->Wt, rSes.rLearn->cdcXInputs, rSes.rLearn->cdcYEval, rSes.rLearn->dYEval); // fixed-length method working 2/14/12
 		}
 	}
 	return lSamplesEvaled; // return qty samples evaluated

@@ -32,6 +32,19 @@ main
 			.cuRandomizeWeightsBlock;
 			.cuSectorTableMake;
 		.ShowDiagnostics
+			Team.TeamTest - Eval;
+				GetRmseNN - Ctrl;
+					cuEvalNNLearnSet;
+						cuEvalSingleSampleBeta;
+					CalcRmseSerial;
+					UpdateRmseRecord;
+				GetRmseNN - Exp;
+					knlFFeRmseOpt;
+					UpdateRmseRecord;
+			Team.TeamTest - Class
+				LetTrainNNThresh
+				TrainNNThresh
+			Team.TeamTest - Bprop
 		Barge.ShowDiagnostics;
 	Drover.MainLoop;
 		.AskSessionName
@@ -55,17 +68,16 @@ main
 				
 	knlBackProp;
 		mtkBackPropMT;
-			subkBackPropRoptMT;*
-				subkBackPropSoptMThread;*
+			subkBackPropRBoptMT;*
+				subkBackPropSBoptMT;*
 					subkEvalSampleBetaMT;
 			subkBackPropEoptMT;
-			subkBackPropSoptMThread;*
+			subkBackPropSBoptMT;*
 				subkEvalSampleBetaMT;
 
-			subkBackPropRoptMWarp;
-				subkBackPropSoptMWarp;
+			subkBackPropRGoptMT;
+				subkBackPropSGoptMT;
 					subkEvalSampleBetaMT;
-			subkBackPropSoptMWarp;
+			subkBackPropSGoptMT;
 				subkEvalSampleBetaMT;
 				
-			subkBackPropSoptMWarp

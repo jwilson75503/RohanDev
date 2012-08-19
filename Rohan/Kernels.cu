@@ -13,9 +13,11 @@ extern float gElapsedTime, gKernelTimeTally;
 //__device__ __align__(16) struct rohanNetwork devNet;
 //__device__ __align__(16) const cuDoubleComplex gpuZero = { 0, 0 };
 //__device__ __align__(16) double devdReturn[1024*1024];
-//__device__ __align__(16) double devdRMSE=0;
+//__device__ __align__(16) double devdAccumSE=0;
 //__device__ __align__(16) int devlReturn[1024*1024];
 //__device__ __align__(16) int dTrainable=0;
 //__device__ __align__(16) int iDevDebug=0;
+
+
 
 #endif

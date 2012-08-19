@@ -5,10 +5,6 @@ int cuMakeNNStructures(struct rohanContext& rSes)
 ;
 int cuSectorTableMake(struct rohanContext& rSes)
 ;
-int cuRandomizeWeightsBlock(struct rohanContext& rSes)
-;
-int cuRandomizeWeightsLayer(struct rohanContext& rSes)
-;
 cuDoubleComplex CxActivate(const cuDoubleComplex Z, struct rohanNetwork& Net)
 ;
 int cuConvertInputs16(struct rohanContext& rSes, int lSample, cuDoubleComplex * Sums)
@@ -23,7 +19,7 @@ int cuEvalMidTopLayers(struct rohanContext& rSes, int lSample)
 ;
 int cuOutputConvert(struct rohanContext& rSes, int lSample)
 ;
-int cuEvalNNLearnSet(struct rohanContext& rSes)
+int cuEvalNNLearnSet(struct rohanContext& rSes, int o)
 ;
 ////int cuFreeNNTop(struct rohanContext& rSes);
 int cuFreeLearnSet(struct rohanContext& rSes)

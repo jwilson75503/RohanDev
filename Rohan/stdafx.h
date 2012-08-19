@@ -27,8 +27,8 @@
 /* CUDA-relevant includes */
 #include <cublas.h>
 #include <cuda.h>
-#include <cuda_runtime_api.h>
 #include <cutil_inline.h>
+#include <cuda_runtime_api.h>
 #include <multithreading.h>
 
 // Shared Utilities (QA Testing)
@@ -63,6 +63,10 @@ using std::cout;
 // defines
 #define TWO_PI 6.283185307179586476925286766558
 #define IDX2C( i, j, ld) ((i)+(( j )*( ld )))
+
+// typedefs
+typedef std::vector<cuDoubleComplex> cxVec;
+
 
 // global declares
 extern int gDebugLvl, gDevDebug, gTrace;

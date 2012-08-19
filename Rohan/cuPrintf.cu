@@ -659,7 +659,7 @@ static int doPrintfDisplay(int headings, int clear, char *bufstart, char *bufend
 
         // Extract all the info and get this printf done
         if(headings)
-            fprintf(printf_fp, "[%d, %d]: ", hdr->blockid, hdr->threadid);
+            //fprintf(printf_fp, "[%d, %d]: ", hdr->blockid, hdr->threadid);
         if(hdr->fmtoffset == 0)
             fprintf(printf_fp, "printf buffer overflow\n");
         else if(!outputPrintfData(printfbuf_local+hdr->fmtoffset, printfbuf_local+sizeof(cuPrintfHeader)))

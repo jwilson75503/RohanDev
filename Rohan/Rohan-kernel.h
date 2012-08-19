@@ -9,15 +9,15 @@ int knlBackProp(struct rohanContext& rSes, int o, char Option, int iBlocks, int 
 
 __global__ void mtkBackPropMT( int lSampleQtyReq, int o, char Option, char cModel);
 
-__device__ void subkBackPropRoptMT(int lSampleQtyReq, int o);
-
-__device__ void subkBackPropRoptMWarp(int lSampleQtyReq, int o);
-
 __device__ void subkBackPropMT(int lSample, int o);
 
-__device__ void subkBackPropSoptMThread(int s, int o, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval );
+__device__ void subkBackPropRBoptMT(int lSampleQtyReq, int o);
 
-__device__ void subkBackPropSoptMWarp(int s, int o, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval );
+__device__ void subkBackPropRGoptMT(int lSampleQtyReq, int o);
+
+__device__ void subkBackPropSBoptMT(int s, int o, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval );
+
+__device__ void subkBackPropSGoptMT(int s, int o, rohanNetwork& Net, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * Deltas, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval );
 
 __device__ void subkBackPropEoptMT(int lSampleQtyReq, int o);
 
@@ -26,25 +26,17 @@ double knlFFeRmseOpt(struct rohanContext& rSes, int o, char Option, int iBlocks,
 
 __global__ void mtkFFeRmseOptMT( int lSampleQtyReq, int o, char Option);
 
-__device__ void subkRmseMT(int lSampleQtyReq, int o, int OUTROWLEN, double * dSqrErr);
-
 __device__ void subkRmseMTBeta(int lSampleQtyReq, int o, int OUTROWLEN, double * dSqrErr);
+
+__device__ void subkRmseMTGamma(int lSampleQtyReq, int o, int OUTROWLEN, double * dSqrErr);
+
+__device__ void subkRmseMTDelta(int lSampleQtyReq, int o, int OUTROWLEN, double * dSqrErr);
+
+__global__ void mtkRmseFinalMT(int limit);
 
 __device__ void subkEvalSampleBetaMT(rohanContext& Ses, int s, rohanNetwork& Net, int o, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval, double * dSqrErr);
 
 __device__ void subkEvalSampleSingleThread(int s, char Option, cuDoubleComplex * Signals, cuDoubleComplex * Zs, cuDoubleComplex * Wt, cuDoubleComplex * XInputs, cuDoubleComplex * YEval, double * dYEval, double * dSqrErr);
-
-__device__ void subkShowMeDiffSums( cuDoubleComplex * Sums, char cSymbol, int x1, int x2, int x3);
-
-__device__ void subkShowMeResetSums( cuDoubleComplex * Sums);
-
-__device__ void subkEvalSingleSampleUT(int lSample);
-
-__device__ void subkConvertInputsUT( int lSample);
-
-__device__ void subkEvalMidTopLayersUT( int lSample);
-
-__device__ void subkOutputConvertUT(int lSample);
 
 __device__ double FUnitCxUT(const cuDoubleComplex A);
 

@@ -6,7 +6,9 @@
 //#define VERSION "0.9.1" // functional learning, continuous and discrete activation
 //#define VERSION "0.9.2" // passes eval, classification, and learning tests
 //#define VERSION "0.9.3" // included shared device memory, logging
-#define VERSION "0.9.4" // automated response files .roh and .han
+//#define VERSION "0.9.4" // automated response files .roh and .han
+//#define VERSION "0.9.5" // threadcount up to 512, full warps only
+#define VERSION "0.9.6" // continuous and discrete data, attainment of RMSE 0.0, original scope completed 8/13/12
 #define AUTHORCREDIT "jwilson@clueland.com"
 
 /*! Includes, cuda */
@@ -25,6 +27,7 @@
 
 const cuDoubleComplex cdcZero = { 0, 0 }; 
 const cuDoubleComplex cdcIdentity = { 1, 0 }; 
+typedef std::vector<cuDoubleComplex> cxVec;
 
 // allocated memory structure flags
 #define RLEARNcdc 1
@@ -40,6 +43,18 @@ const cuDoubleComplex cdcIdentity = { 1, 0 };
 #define ADMINF 16
 #define DEBUGF 32
 #define CODERF	256
+
+// testing defines
+#define EVALUATEF 1
+#define CLASSIFYF 2
+#define BACKPROPF 4
+
+// program_option defines
+#define TSERIESPMQTY 7
+#define CONTYPMQTY 4
+#define NETWORKPMQTY 5
+#define LEARNPMQTY 6
+#define EVALPMQTY 5
 
 // major data structures
 typedef struct rohanLayer
@@ -95,14 +110,14 @@ typedef struct rohanNetwork
 struct rohanLearningSet /*! Learning sets contain a short preamble of parameters followed by delimited data */
 {
 	/// scalar value members
-	//int iReadMode /*! Defaults to discrete outputs but a value of 0 denotes Continuous outputs. */;
+	//int iContReadMode /*! Defaults to discrete outputs but a value of 0 denotes Continuous outputs. */;
 	int lSampleQty /*! # samples to be read from the learning set file; defaults to # samples found*/;
 	int iValuesPerLine /*! Numerical values per line-sample. Inputs + outputs should equal values per line in most cases but some inputs may be intentionally excluded from learning. */;
 	int iInputQty /*! # inputs are per line; defaults to the number of values per line, minus the number of outputs, read from left to right. See bRInJMode. */;
 	int iOutputQty /*! # outputs are per line; defaults to 1. Read from left to right among the rightmost columns. */;
 	//rohanSample *rSample /*! Array of rohanSample structures. */; //removed 10/24/11
 	FILE *fileInput /*! The filehandle used for reading the learning set from the given file-like object. */; 
-	int bContInputs /*! Inputs have decimals. This may go away in favor of a variety of input types.*/;
+	int iContInputs /*! Inputs have decimals. This may go away in favor of a variety of input types.*/;
 	int iContOutputs /*! Outputs have decimals. */;
 	int lSampleIdxReq /*! index of sample currently or last under consideration. */;
 	void* hostLearnPtr;
@@ -133,6 +148,18 @@ struct rohanLearningSet /*! Learning sets contain a short preamble of parameters
 	int OUTSIZED;
 	int INSIZECX;
 	int OUTSIZECX;
+	/// time series params
+	int iTsLines /*! qty of lines in file to be read */;
+	int iTsLinesOrder /*! lines ordered 0=top to bottom, 1=reversed */;
+	int iTsValuesPerLine /*! values per line to be used */;
+	int iTsValuesRL /*! read values 1= Right to Left, 0 = L to R */;
+	int iTsDiscreteValues /*! 1=discrete, 0=continuous */;
+	int iTsLinesCombinedQty /*! qty of lines combined into one sample */;
+	int iTsLinesStride /*! qty of lines incremented between samples */;
+	//int iTsSamplesSkippedLearn /*! qty of samples skipped before learning */;
+	//int iTsSamplesUsedLearn /*! qty of samples used during learning */;
+	//int iTsSamplesSkippedEval /*! qty of samples skipped before evaluation */;
+	//int iTsSamplesUsedEval /*! qty of samples used during evaluation7 */;
 };
 
 typedef struct rohanContext
@@ -156,7 +183,7 @@ typedef struct rohanContext
 	int deviceCount /*! number of CUDA devices attached to host */ ;
 	cudaDeviceProp deviceProp /*! capabilities of the CUDA device currently in use. */ ;
 	// input handling
-	int iReadMode;
+	int iContReadMode /*! default to discrete=1 (0=continuous) */;
 	int bConsoleUsed /*! Session is being directed via console input. XX */;
 	int bRInJMode /*! Reverse Input Justification: When active, will read inputs from the same columns but in right to left order to maintain backwards compatibility with some older simulators. */;
 	int bRMSEon /*! diables RMSE tracking for classification problems. XX */;
@@ -164,24 +191,37 @@ typedef struct rohanContext
 	char sWeightSet[256] /*! Filename of compelx weight set. (.wgt) */;
 	char cwd[1024] /*! current working directory */;
 	char sDefaultConfig[256];
-	// internal structure
+	// internal objects
 	struct rohanNetwork * rNet /*! Active network currently in use for session. */;
 	struct rohanLearningSet * rLearn /*! Active learning set currently in use for session. */;
 	struct rohanNetwork * devNet /*! dev space network currently in use for session. */;
 	struct rohanLearningSet * devLearn /*! dev space learning set currently in use for session. */;
 	struct rohanContext * devSes /*! dev space learning set currently in use for session. */;
+	class cBarge * Barge /*! The calculating "engine" currently in use. */;
+	class cDrover * Drover /*! The calculating "engine" currently in use. */;
+	class cRamp * Ramp /*! The calculating "engine" currently in use. */;
 	class cTeam * Team /*! The calculating "engine" currently in use. */;
 	// learning related
 	int lSamplesTrainable /*! Number of samples that exceed dMAX criterion. */;
 	int iOutputFocus /*! which output is under consideration (0=all) */;
 	int iBpropBlocks /*! multithread param for backward propagation */;
 	int iBpropThreads /*! multithread param for backward propagtion */;
+	double dLastRmseB; // model B Block
+	double dBestRmseB;
+	double dLastRmseG; // model G global memory
+	double dBestRmseG;
+	double dLastRmseS; // model S serial
+	double dBestRmseS;
+	double dLastRmse3; // model 3 wide HN3
+	double dBestRmse3;
+	double dLastRMSE /*! most recent learned RMSE */;
+	double dBestRMSE /*! most recent best RMSE */;
+	double dPrevLastRMSE /*! 2nd most recent learned RMSE */;
+	double dPrevBestRMSE /*! 2nd most recent best RMSE */;
 	double dMAX /*! Maximum allowable error in sample output reproduction without flagging for backprop learning. */;
-	double dHostRMSE /*! The evaluated Root Mean Square Error over the working sample subset, equivalent to the standard deviation or sigma. */;
-	double dDevRMSE /*! The evaluated Root Mean Square Error over the working sample subset, equivalent to the standard deviation or sigma. */;
-	double dRMSE /*! most recent RMSE */;
-	double dTargetRMSE /*! Acceptable RMSE value for stopping learninig when achieved. */;
+	double dTargetRMSE /*! Acceptable RMSE value for stopping learning when achieved. */;
 	int iEpochLength /*! iterations per epoch; learning will pause to check once per epoch for further input */;
+	int iEpochQty /*! number of epochs to be allowed to pass */ ;
 	int cEngagedModel;
 	// network related
 	int iContActivation /*! Use Continuous activation function (or not). */;
@@ -191,8 +231,8 @@ typedef struct rohanContext
 	int iLayerQty /*! layers with nonzero node qtys specified */;
 	char sNetString[64];
 	// record keeping
-	FILE *deviceBucket /*! handle used for writing large volumes of diagnostic information to device */;
-	FILE *hostBucket /*! handle used for writing large volumes of diagnostic information to host */;
+	FILE *deviceBucket /*! handle used for writing large volumes of diagnostic information from device */;
+	FILE *hostBucket /*! handle used for writing large volumes of diagnostic information from host */;
 	int iLoggingEnabled;
 	std::ofstream * ofsRLog /*! handle used for writing terse updates to RohanLog.txt . */;
 	std::ofstream * ofsHanLog /*! handle used for recording events to [sessionname].han . */;
@@ -203,7 +243,7 @@ typedef struct rohanContext
 	int iInputQty /*! # inputs are per line; defaults to the number of values per line, minus the number of outputs, read from left to right. See bRInJMode. */;
 	int iOutputQty /*! # outputs are per line; defaults to 1. Read from left to right among the rightmost columns. */;
 	int lSampleQtyReq /*! Size of requested working subset of samples, counted from the top. */;
-	
+	int iEvalSkip/*! qty of samples skipped before beginning evaluation */;
 } rohanContext;
 
 #define mCheckMallocWorked(X) if (X == NULL) { printf("%s: malloc fail for x in line %d\n", __FILE__, __LINE__); return 0; } 

@@ -17,17 +17,29 @@ extern int bCUDAavailable;
 
 cTeam::cTeam( struct rohanContext& rSes)//, struct rohanNetwork& rNet, rohanLearningSet& rLearn)
 {mIDfunc
-	SetContext(rSes); // attach to host-side data structures
-	SetNetwork(*rSes.rNet);
-	SetSamples(*rSes.rLearn);
-
-	// informally acknowledge class
-	//ShowMe();
-	//const char* const classname = "cTeam";
-	
+	rSes.Team=this;
 	bHitched=FALSE;
 	bTaut=FALSE;
 	// end ctor
+}
+
+int cTeam::SetContext( rohanContext& rC)
+{/// enables pointer access to internal objects
+	rSes = &rC;
+	rLearn = rC.rLearn;
+	rNet = rC.rNet;
+	Barge=rC.Barge;
+	Drover=rC.Drover;
+	Ramp=rC.Ramp;
+	//Team=rC.Team;
+
+	return 0;
+}
+
+void cTeam::ShowMe()
+{mIDfunc
+	//ShowMeSes(* rSes, false);
+	printf("I'm a mighty stallion!\n");
 }
 
 char cTeam::GetHitched()
@@ -41,56 +53,13 @@ char cTeam::GetTaut()
 }
 
 
-int cTeam::SetContext( rohanContext& rC)
-{mIDfunc/// enables pointer access to master context struct
-	rSes = &rC;
-	return 0;
-}
-
-int cTeam::SetNetwork( rohanNetwork& rN)
-{mIDfunc/// enables pointer access to weight sets and layer sizes, etc
-	rNet = &rN;
-	return 0;
-}
-
-int cTeam::SetSamples( rohanLearningSet& rL)
-{mIDfunc/// enables pointer access to master sample struct
-	rLearn = &rL;
-	return 0;
-}
-
-int cTeam::SetBarge( class cBarge * cbBarge)
-{mIDfunc/// enables pointer access to active Barge object
-	Barge = cbBarge;
-	return 0;
-}
-
-int cTeam::SetDrover( class cDrover * cdDrover)
-{mIDfunc/// enables pointer access to active Drover object
-	Drover = cdDrover;
-	return 0;
-}
-
-
-int cTeam::SetRamp( class cRamp * crRamp)
-{mIDfunc/// enables pointer access to active Drover object
-	Ramp = crRamp;
-	return 0;
-}
-
-
-void cTeam::ShowMe()
-{mIDfunc
-	//ShowMeSes(* rSes, false);
-	printf("I'm a mighty stallion!\n");
-}
-
 int cTeam::LetEvalSet( rohanContext& rSes, char chMethod)
 {mIDfunc/// Submits a subset of the samples available forevaluation, returns samples submitted.
 	// choose host submission loop or device
+	// currently only called from console menu, and is considered "boarded up" or not actively used - 7/16/12
 	if(chMethod=='H' || chMethod=='h'){
 		for (int i=0; i< rSes.lSampleQtyReq; ++i){
-			cuEvalSingleSampleBeta(rSes, i, *rSes.rNet, 0, rSes.rNet->Signals, rSes.rNet->Zs, rSes.rNet->Wt, rSes.rLearn->cdcXInputs, rSes.rLearn->cdcYEval, rSes.rLearn->dYEval);
+			cuEvalSingleSampleBeta(rSes, i, *rSes.rNet, *rSes.rLearn, 0, rSes.rNet->Signals, rSes.rNet->Zs, rSes.rNet->Wt, rSes.rLearn->cdcXInputs, rSes.rLearn->cdcYEval, rSes.rLearn->dYEval);
 		}
 	}
 	else {// D for GPU device XX
@@ -101,10 +70,14 @@ int cTeam::LetEvalSet( rohanContext& rSes, char chMethod)
 		} else
 		knlFFeRmseOpt( rSes, 1, 'R', rSes.iEvalBlocks, rSes.iEvalThreads);
 	}
+	char sLog[255];
+	sprintf(sLog,"%s(rSes, chMethod %c ) returns %d", __FUNCTION__, chMethod, rSes.lSampleQtyReq);
+	Barge->RLog(rSes, 0, sLog);
+
 	return rSes.lSampleQtyReq;
 }
 
-int cTeam::LetTrainNNThresh( rohanContext& rSes, int o, char chMethod, double dTargetRMSE, int iEpochLength, char Venue)
+int cTeam::LetTrainNNThresh( rohanContext& rSes, int o, char chMethod, double dTargetRMSE, int iEpochLength, int iEpochQty, char cModel)
 {mIDfunc/// Submits samples available for backprop learning.
 /// o indictaes which output(s)
 // chMethod controls option used:
@@ -117,84 +90,159 @@ int cTeam::LetTrainNNThresh( rohanContext& rSes, int o, char chMethod, double dT
 	// B - fixed-size "block" implementation meant to accomodate shared memory
 	// P - polylayer original implementation, currently limited to 3 layers + 0
 
-	int lReturn, count=1;
+	int lReturn, count=1, ECount=1;
 	double RMSE; //=dTargetRMSE;
 	char sLog[255];
+	bool bInternalTaut;
 
-	sprintf(sLog, "Learn input %d, method %c, target %f, epoch %d, venue %c: BEGIN", o, chMethod, dTargetRMSE, iEpochLength, Venue);
+	sprintf(sLog, "Learn input %d, method %c, target %f, epoch %d, epqty %d, cModel %c: BEGIN", o, chMethod, dTargetRMSE, iEpochLength, iEpochQty, cModel);
 	Barge->RLog(rSes, 0, sLog);
 
-	if(Venue=='D' || Venue=='d'){
-		bool bInternalTaut=false;
+	if(cModel=='B'){ 
+		bInternalTaut=false;
 		if(!bTaut){
 			LetTaut(rSes);
 			bInternalTaut=true;
 		}
-		RMSE=knlFFeRmseOpt( rSes, o, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE
-		lReturn=knlBackProp( rSes, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads, cEngagedModel); // do training
-
-		if(chMethod=='R') {
-			RMSE=knlFFeRmseOpt( rSes, o, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE
-			while(dTargetRMSE<RMSE && lReturn && count < iEpochLength && chMethod=='R'){ // target not met, trainable samples left
-				lReturn=knlBackProp( rSes, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads, cEngagedModel); // do more training
-				++count; // increment counter
-				RMSE=knlFFeRmseOpt( rSes, o, 'R', rSes.iEvalBlocks, rSes.iEvalThreads); // check RMSE anew
-			}
-			if(bInternalTaut)
-				LetSlack(rSes);
-			//rSes.dDevRMSE=RMSE; // update device-achieved RMSE // already done at knl level 6/29/12
-		}
-		else{
-			if(bInternalTaut)
-				LetSlack(rSes);
-		}	
 	}
-	if(Venue=='H' || Venue=='h'){
-		//host training goes here XX
-		RMSE=cuEvalNNLearnSet(rSes); // evaluation is now included separately in host classification tests
-		lReturn=TrainNNThresh( rSes, true); // YY change false to true
+
+	RMSE=GetRmseNN(rSes, o, 'R', 'B'); // check RMSE anew
+	
+	if(cModel=='B') lReturn=knlBackProp( rSes, o, 'E', rSes.iBpropBlocks, rSes.iBpropThreads, cEngagedModel); // check for trainable samples
+	if(cModel=='S') lReturn=TrainNNThresh( rSes, false);
+
+	if(chMethod=='R') {
+		while( dTargetRMSE<RMSE && lReturn && ECount<=iEpochQty){ // target not met, trainable samples left, iterations yet to go
 		
-		if(chMethod=='R') {
-			RMSE=cuEvalNNLearnSet(rSes);  // check RMSE
-			while(dTargetRMSE<RMSE && lReturn && count < iEpochLength && chMethod=='R'){ // target not met, trainable samples left
-				lReturn=TrainNNThresh( rSes, true); // do more training
-				++count; // increment counter
-				RMSE=cuEvalNNLearnSet(rSes); // check RMSE anew
+			if(cModel=='B') lReturn=knlBackProp( rSes, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads, cEngagedModel); // do more training
+			if(cModel=='S') lReturn=TrainNNThresh( rSes, true); // do more training
+
+			RMSE=GetRmseNN(rSes, o, 'R', cModel); // check RMSE anew
+			sprintf(sLog, "Epoch %d, iteration %d returns RMSE %f", ECount, count, RMSE); Barge->RLog(rSes, 0, sLog);
+			if(++count>iEpochLength){ // increment counter
+				if(iEpochLength>1){
+					sprintf(sLog, "EPOCH %d COMPLETE: rmse %f", ECount, RMSE); Barge->RLog(rSes, ADMINF, sLog);
+					LetSlack(rSes); Ramp->SaveNNWeights(rSes, cModel); LetTaut(rSes);
+				}
+				++ECount; count=1;
 			}
-			rSes.dHostRMSE=RMSE; // update device-achieved RMSE
 		}
-		else{
-			//miscellaneous
-		}	
-				
 	}
-	sprintf(sLog, "Learn input %d, method %c, target %f, epoch %d, venue %c: RMSE= %f END", o, chMethod, dTargetRMSE, iEpochLength, Venue, RMSE);
+
+	if(cModel=='B') // || cModel=='D' || cModel=='d'){
+		if(bInternalTaut)
+			LetSlack(rSes);	
+
+	if(dTargetRMSE>=RMSE) Barge->RLog(rSes, 0, "Target RMSE achieved");
+	if(lReturn==0) Barge->RLog(rSes, 0, "No trainable samples");
+	if(iEpochLength>1 && ECount>iEpochQty) Barge->RLog(rSes, 0, "CHILIAD COMPLETE");
+	int iTTL=(count-1)+(ECount-1)*iEpochLength;
+	if(chMethod=='R') sprintf(sLog, "Iterations=%d", iTTL);
+	Barge->RLog(rSes, USERF, sLog);
+	sprintf(sLog, "Learn input %d, method %c, target %f, epoch %d, epqty %d, cModel %c: RMSE= %f END", o, chMethod, dTargetRMSE, iEpochLength, iEpochQty, cModel, RMSE);
 	Barge->RLog(rSes, 0, sLog);
-
+	Barge->RLog(rSes, 0, __FUNCTION__);
 	return lReturn;
 }
 
-int cTeam::LetBackpropSingleSample( rohanContext& rSes, int lSampleIdxReq, int o, char chMethod)
-{mIDfunc
-	int lReturn=knlBackProp( rSes, o, 'S', rSes.iBpropBlocks, rSes.iBpropThreads, cEngagedModel); // S indicates single bprop operation
-
-	return lReturn;
-}
-
-double cTeam::GetRmseNN(struct rohanContext& rSes, int o, char Option, char Venue)
-{mIDfunc/*! checks sampled outputs vs evaluated outputs and calculates root mean squared error. */
-	// o controls which output is used (zero for all)
-	// Option will determine if existing data is used (E, not fully implemented) or refreshed (R) XX 6/23/12
-	// Venue controls which mechanism (cpu H, GPU D) will do the calulation
-		// cModel indicates which calculation model is desired to be used for the duration of the hitching.
+int cTeam::LetTrainNNThreshGGG( rohanContext& rSes, int o, char chMethod, double dTargetRMSE, int iEpochLength, int iEpochQty, char cModel)
+{mIDfunc/// Submits samples available for backprop learning.
+/// o indictaes which output(s)
+// chMethod controls option used:
+// Option S - single sample correction only XX unimplemented?
+// Option E - keep existing weights, count trainable samples only
+// Option R - perform corrections for all trainable samples
+	// cModel indicates which calculation model is desired to be used for the duration of the hitching.
 	// S - serial, no acceleration
 	// 3 - Hecht-Neilsen trilayer with indefinitely width
 	// B - fixed-size "block" implementation meant to accomodate shared memory
 	// P - polylayer original implementation, currently limited to 3 layers + 0
 
-	double dAnswer;
+	int lReturn, count=1, ECount=1;
+	double RMSE; //=dTargetRMSE;
+	char sLog[255];
 
-	if (Venue=='D'||Venue=='d'){ // calc on GPU
+	sprintf(sLog, "Learn input %d, method %c, target %f, epoch %d, epqty %d, cModel %c: BEGIN", o, chMethod, dTargetRMSE, iEpochLength, iEpochQty, cModel);
+	Barge->RLog(rSes, 0, sLog);
+
+	if(cModel=='B'){ // || cModel=='D' || cModel=='d'){
+		bool bInternalTaut=false;
+		if(!bTaut){
+			LetTaut(rSes);
+			bInternalTaut=true;
+		}
+		RMSE=GetRmseNN(rSes, o, 'R', 'B'); // check RMSE anew
+		lReturn=knlBackProp( rSes, o, 'E', rSes.iBpropBlocks, rSes.iBpropThreads, cEngagedModel); // check for trainable samples
+		if(chMethod=='R') {
+			while( dTargetRMSE<RMSE && lReturn && ECount<=iEpochQty){ // target not met, trainable samples left, iterations yet to go
+				lReturn=knlBackProp( rSes, o, chMethod, rSes.iBpropBlocks, rSes.iBpropThreads, cEngagedModel); // do more training
+				RMSE=GetRmseNN(rSes, o, 'R', 'B'); // check RMSE anew
+				sprintf(sLog, "Epoch %d, iteration %d returns RMSE %f", ECount, count, RMSE); Barge->RLog(rSes, 0, sLog);
+				if(++count>iEpochLength){ // increment counter
+					sprintf(sLog, "EPOCH %d COMPLETE: %f", ECount, RMSE);
+					Barge->RLog(rSes, ADMINF, sLog);
+					++ECount; count=1;
+				}
+			}
+			if(bInternalTaut)
+				LetSlack(rSes);
+			//UpdateRmseRecord(rSes, RMSE, RMSE, 'B'); // update device-achieved RMSE
+		}
+		else{ // for method E
+			if(bInternalTaut)
+				LetSlack(rSes);
+		}	
+	}
+	if(cModel=='S' || cModel=='H' || cModel=='h'){
+		//host training goes here
+		RMSE=GetRmseNN(rSes, o, 'R', 'S'); // check RMSE anew
+		lReturn=TrainNNThresh( rSes, false);
+		if(chMethod=='R') {
+			while(dTargetRMSE<RMSE && lReturn && ECount<=iEpochQty ){ // target not met, trainable samples left
+				lReturn=TrainNNThresh( rSes, true); // do more training
+				RMSE=GetRmseNN(rSes, o, 'R', 'S'); // check RMSE anew
+				sprintf(sLog, "Epoch %d, iteration %d returns RMSE %f", ECount, count, RMSE); Barge->RLog(rSes, 0, sLog);
+				if(++count>iEpochLength){ // increment counter
+					sprintf(sLog, "EPOCH %d COMPLETE: %f", ECount, RMSE);
+					Barge->RLog(rSes, ADMINF, sLog);
+					++ECount; count=1;
+				}
+			}
+			//UpdateRmseRecord(rSes, RMSE, RMSE, 'S'); // update device-achieved RMSE
+		}				
+	}
+
+	if(dTargetRMSE>=RMSE) Barge->RLog(rSes, 0, "Target RMSE achieved");
+	if(lReturn==0) Barge->RLog(rSes, 0, "No trainable samples");
+	if(ECount>iEpochQty) Barge->RLog(rSes, 0, "CHILIAD COMPLETE");
+	int iTTL=(count-1)+(ECount-1)*iEpochLength;
+	sprintf(sLog, "Iterations=%d", iTTL);
+	Barge->RLog(rSes, USERF, sLog);
+	sprintf(sLog, "Learn input %d, method %c, target %f, epoch %d, epqty %d, cModel %c: RMSE= %f END", o, chMethod, dTargetRMSE, iEpochLength, iEpochQty, cModel, RMSE);
+	Barge->RLog(rSes, 0, sLog);
+	Barge->RLog(rSes, 0, __FUNCTION__);
+	return lReturn;
+}
+
+double cTeam::GetRmseNN(struct rohanContext& rSes, int o, char Option, char cModel)
+{mIDfunc/*! checks sampled outputs vs evaluated outputs and calculates root mean squared error. */
+	// o controls which output is used (zero for all)
+	// Option will determine if existing data is used (E, not fully implemented) or refreshed (R) XX 6/23/12
+	// cModel controls which mechanism (cpu H, GPU D) will do the calulation
+		// cModel indicates which calculation model is desired to be used for the duration of the hitching.
+	// S - serial, no acceleration
+	// 3 - Hecht-Neilsen trilayer with indefinite width
+	// B - fixed-size "block" implementation meant to accomodate shared memory
+	// P - polylayer original implementation, currently limited to 3 layers + 0
+
+	double dAnswer=777.777;
+	char sLog[255];
+	sprintf(sLog, "\t%s(rSes, o=%d, opt=%c, model=%c) called", __FUNCTION__, o, Option, cModel); 
+	//if (cModel=='S')fprintf(rSes.hostBucket,"%s\n", sLog); else fprintf(rSes.deviceBucket,"%s\n", sLog);
+	Barge->RLog(rSes, 0, sLog); 
+
+
+	if (cModel=='B'){ 
 		if(bTaut) // already taut? no problem!
 			dAnswer=knlFFeRmseOpt( rSes, o, Option, rSes.iEvalBlocks, rSes.iEvalThreads );
 		else{ //must make taut then return to previous state
@@ -202,17 +250,23 @@ double cTeam::GetRmseNN(struct rohanContext& rSes, int o, char Option, char Venu
 			dAnswer=knlFFeRmseOpt( rSes, o, Option, rSes.iEvalBlocks, rSes.iEvalThreads );
 			LetSlack(rSes);
 		}
-	} // END GPU CASE
-	if (Venue=='H'||Venue=='h'){ // calc on CPU
-		if (Option=='R'||Option=='r'){
-			cuEvalNNLearnSet(rSes); // refresh YEvals
-			dAnswer=RmseNN(rSes, o); // update dHostRMSE	
-		}
-		else if (Option=='E'||Option=='e'){
-			dAnswer=RmseNN(rSes, o); // update dHostRMSE	
-		}
-	} //END CPU CASE
+	} 
+	if (cModel=='S'){ 
+		if (Option=='R')
+			cuEvalNNLearnSet(rSes, o); // refresh YEvals
+		dAnswer=CalcRmseSerial(rSes, o); 
+	} 
+	
+	if(Option=='R'){
+		UpdateRmseRecord(rSes, dAnswer, dAnswer, cModel); // update achieved RMSE
+		sprintf(sLog, "GetRmseNN(rSes, o=%d, Option %c, %c) updates %f RMSE", o, Option, cModel, dAnswer); 
+	}
+	else // no feed-forward evaluation, so no RMSE update 7/16/12
+		sprintf(sLog, "GetRmseNN(rSes, o=%d, Option %c, %c) returns %f without updating RMSE", o, Option, cModel, dAnswer); 
+	Barge->RLog(rSes, 0, sLog); 
 
+	//if (cModel=='S')fprintf(rSes.hostBucket,"%s\n", sLog); else fprintf(rSes.deviceBucket,"%s\n", sLog);
+		
 	return dAnswer;
 }
 
@@ -250,6 +304,7 @@ int cTeam::LetHitch(struct rohanContext& rSes, char cModel)
 		/// end members and structures
 		Barge->RLog(rSes, 0, "H+T-->");
 		bHitched=TRUE; bTaut=TRUE;
+		Barge->RLog(rSes, 0, __FUNCTION__);
 		return TRUE;
 	}
 }
@@ -277,6 +332,10 @@ int cTeam::TransferContext(struct rohanContext& rSes, char Direction)
 				mCheckCudaWorked
 		}
 	}
+	char sLog[255];
+	sprintf(sLog,"%s(rSes, Direction %c )", __FUNCTION__, Direction);
+	Barge->RLog(rSes, 0, sLog);
+
 	return iReturn;
 }
 
@@ -313,6 +372,10 @@ int cTeam::CopyNet(struct rohanContext& rSes, char Direction)
 	
 	TransferNet(rSes, 'D');
 
+	char sLog[255];
+	sprintf(sLog,"%s(rSes, Direction %c )", __FUNCTION__, Direction);
+	Barge->RLog(rSes, 0, sLog);
+
 	return 0;
 }
 
@@ -333,6 +396,10 @@ int cTeam::TransferNet(struct rohanContext& rSes, char Direction)
 	if(crc32buf( (char*)rSes.rNet, SIZE )!=knlCRC32Buf( (char*)rSes.devNet, SIZE ))
 			Barge->RLog(rSes, ERRORF, "FAILURE copying Net params");
 	
+	char sLog[255];
+	sprintf(sLog,"%s(rSes, Direction %c )", __FUNCTION__, Direction);
+	Barge->RLog(rSes, 0, sLog);
+
 	return 0;
 }
 
@@ -444,12 +511,16 @@ int cTeam::CopyLearnSet(struct rohanContext& rSes, char Direction)
 	if(crc32buf( (char*)rlSrc, SIZE )!=knlCRC32Buf( (char*)rSes.devLearn, SIZE ))
 		Barge->RLog(rSes, ERRORF, "FAILURE copying samples");
 	
+	char sLog[255];
+	sprintf(sLog,"%s(rSes, Direction %c )", __FUNCTION__, Direction);
+	Barge->RLog(rSes, 0, sLog);
+	
 	return 0;
 }
 
 int cTeam::LetUnHitch(struct rohanContext& rSes)
 {mIDfunc/*! \callgraph \callergraph free device memory structures to Team */
-	// cModel indicates which calculation model is desired to be used for the duration of the hitching. ZZ
+	// cModel indicates which calculation model is desired to be used for the duration of the hitching.
 	// S - serial, no acceleration
 	// 3 - Hecht-Neilsen trilayer with indefinitely width
 	// B - fixed-size "block" implementation meant to accomodate shared memory
@@ -492,7 +563,7 @@ int cTeam::LetUnHitch(struct rohanContext& rSes)
 		Barge->RLog(rSes, 0, "cTeam unhitched.");
 		bHitched=FALSE;
 		sprintf(sLog, "Model %c network disengaged.", cEngagedModel); Barge->RLog(rSes, 0+DEBUGF, sLog);
-		rSes.cEngagedModel=cEngagedModel=NULL;
+		rSes.cEngagedModel=cEngagedModel=' '; // reset to space
 		return TRUE;
 	}
 	else{
@@ -518,7 +589,7 @@ int cTeam::LetTaut(struct rohanContext& rSes)
 		if(bHitched==FALSE)
 			Barge->RLog(rSes, WARNINGF, "cTeam is not hitched!");
 	}
-	
+	Barge->RLog(rSes, 0, __FUNCTION__);
 	return 0;
 }
 
@@ -596,8 +667,10 @@ int cTeam::TransferLayers(struct rohanContext& rSes, char Direction)
 			//printf("-> layer %d transfered?\n", L);
 		}
 	}
-	//printf("cdt: Layers (weights only) copied %c\n", Direction);
-	
+	char sLog[255];
+	sprintf(sLog,"%s(rSes, Direction %c )", __FUNCTION__, Direction);
+	Barge->RLog(rSes, 0, sLog);
+	Barge->RLog(rSes, 0, __FUNCTION__);
 	return 0;
 }
 
@@ -618,6 +691,7 @@ int cTeam::LetSlack(struct rohanContext& rSes)
 		if(bHitched==FALSE)
 			Barge->RLog(rSes, WARNINGF, "cTeam is not hitched!");
 	}
+	Barge->RLog(rSes, 0, __FUNCTION__);
 	return 0;
 }
 
@@ -664,233 +738,124 @@ int cTeam::TransferOutputs(struct rohanContext& rSes, char Direction)
 		cudaMemcpy( rlSrc->cdcYEval   , rlSrc->gpuAltYEval, OUTSIZECX, kind); 
 			mCheckCudaWorked
 	}
-
+	char sLog[255];
+	sprintf(sLog,"%s(rSes, Direction %c )", __FUNCTION__, Direction);
+	Barge->RLog(rSes, 0, sLog);
 	return 0;
 }
 
-int cTeam::GetEvalSingleSample( struct rohanContext& rSes, int lSampleIdxReq, char chMethod)
-{mIDfunc/*! calculates NN outputs for a given sample with GPU method */
-	if(chMethod=='c')
-		return cuEvalSingleSampleBeta(rSes, lSampleIdxReq, *rSes.rNet, 0, rSes.rNet->Signals, rSes.rNet->Zs, rSes.rNet->Wt, rSes.rLearn->cdcXInputs, rSes.rLearn->cdcYEval, rSes.rLearn->dYEval);
-	else // d for GPU device XX
-		return 0;////return devEvalSingleSample(rSes, lSampleIdxReq);
-}
-
-
-double cTeam::RmseEvaluateTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iSampleQty)
-{mIDfunc /// runs tests for RMSE and evaluation on both host and GPU
-	int iDifferent=0, iOldSampleQtyReq=rSes.lSampleQtyReq; double dDifferent=0.0; float fDevTime=0.0;
-
-	if(iSampleQty>0)
-		rSes.lSampleQtyReq=iSampleQty; // change sample set size for just this test
-	else 
-		rSes.lSampleQtyReq=rSes.lSampleQty;
-	boost::timer::cpu_timer tHost, tDev;
-	boost::timer::cpu_times elapHost, elapDev;
-		// perform a warm-up host eval to eliminate the always-longer first one, return true number of samples, prepare timer to resume @ 0.0;
-		//Barge->RLog(rSes, 0, "WARMUP");
-			GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'H');
-		tHost.start();
-		tHost.stop();
-			
-			GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'D');
-			
-		tDev.start();
-		tDev.stop();
-		char sLog0[80]; sprintf(sLog0, "BEGIN RMSE/EVALUATE TEST: %d TRIALS, %d SAMPLES", iTrials, rSes.lSampleQtyReq);
-		Barge->RLog( rSes, 0, sLog0);
-		//printf("-------------------------------\n");
+int cTeam::TeamTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTestType, int iTrials, int iBlocks, int iThreads, int iSampleQtyReq, int o)
+{mIDfunc /// runs tests on both host and GPU
+	double dDifferent=0.0, dCtrlDiff, dExpDiff; float fExpTime=0.0;
+	int iDeviceTrainable, iHostTrainable, iMargin=0, oldThreads=rSes.iBpropThreads, 
+		iOldSampleQtyReq=rSes.lSampleQtyReq, iDifferent=0, iPassed=true; 
+	char sTestType[80], sLog0[255], sLog1[255], sLog2[255], sLog3[255];
+	boost::timer::cpu_timer tCtrl, tExp;
+	boost::timer::cpu_times elapCtrl, elapExp;
+	tCtrl.start();	tCtrl.stop();	tExp.start();	tExp.stop();
+	if(iTestType==EVALUATEF) sprintf(sTestType, "%s", "EVALUATE");
+	if(iTestType==CLASSIFYF) sprintf(sTestType, "%s", "CLASSIFY");
+	if(iTestType==BACKPROPF) sprintf(sTestType, "%s", "BACKPROP");
 	
-	for(int i=1; i<=iTrials; ++i){
-		//reset values
-		rSes.dDevRMSE = rSes.dHostRMSE = 0.0;
-		// begin dev eval test
-		 
-		tDev.resume();
-			//printf(">>DEVICE: RMSE = %f\n", Team->GetRmseNN(rSes, iSampleQty));
-			GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'D'); // run on device with refreshed values
-		fDevTime+=gElapsedTime; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
-		tDev.stop();
-		 
-		// end dev eval test
-
-		//begin host eval test
-		//printf("HST:");
-		{
-			//boost::timer::auto_cpu_timer o;
-			tHost.resume();
-			cuEvalNNLearnSet(rSes);
-			RmseNN(rSes, 0); // update dHostRMSE
-			tHost.stop();
-		}
-		// end host eval test
-
-		iDifferent += OutputValidate(rSes);
-		//printf("BOTH: %d differences found on verify.\n", iDifferent);
-		dDifferent += rSes.dDevRMSE - rSes.dHostRMSE;
-		//printf("BOTH: delta RMSE %f += %f - %f\n", dDifferent, rSes.dDevRMSE, rSes.dHostRMSE);
-		//printf("-------------------------------%d\n", i);
-	}
-	elapHost=tHost.elapsed();
-	elapDev =tDev.elapsed();
-	int64 denominator = iTrials*100000; // convert to tenths of milliseconds
-	int64 quotientHost = elapHost.wall / denominator;
-	int64 quotientDev  = elapDev.wall  / denominator;
-	double dAvgTimeHost = (double)quotientHost; 
-	double dAvgTimeDev = (double)quotientDev; 
-	char sLog1[80]; sprintf(sLog1, "Host/Serial mean performance over %d runs: %.1f ms", iTrials, dAvgTimeHost/10);
-	char sLog2[80]; sprintf(sLog2, "Dev/CUDA    mean performance over %d runs: %.1f ms", iTrials, fDevTime/iTrials);
-	char sLog3[14]; sprintf(sLog3, ( (iDifferent || abs(dDifferent)>.001 ) ? "EVALUATE FAIL" : "EVALUATE PASS" ) );
-	//printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
-	Barge->RLog(rSes, 0, sLog1);
-	Barge->RLog(rSes, 0, sLog2);
-	Barge->RLog(rSes, 0, sLog3);
-
-	rSes.lSampleQtyReq=iOldSampleQtyReq; // restore original sample set size just before exit
-	return iDifferent+dDifferent;
-}
-
-
-int cTeam::ClassifyTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iSampleQty)
-{mIDfunc /// runs classification tests on both host and GPU
-	int iDeviceTrainable, iHostTrainable, iMargin=0, iOldSampleQtyReq=rSes.lSampleQtyReq; float fDevTime=0.0;
-
-	if(iSampleQty>0)
-		rSes.lSampleQtyReq=iSampleQty; // change sample set size just for this function
+	if(iSampleQtyReq>0 && iSampleQtyReq < rSes.lSampleQty)
+		rSes.lSampleQtyReq=iSampleQtyReq; // change sample set size just for this function
 	else 
 		rSes.lSampleQtyReq=rSes.lSampleQty;
-	boost::timer::cpu_timer tHost, tDev;
-	boost::timer::cpu_times elapHost, elapDev;
-		// perform a warm-up host eval to eliminate the always-longer first one, return true number of samples, prepare timer to resume @ 0.0;
-		//printf("WARMUP:\n");
-			cuEvalNNLearnSet(rSes);
-			RmseNN(rSes, 0); // update dHostRMSE
-		tHost.start();
-		tHost.stop();
+	if(iThreads>0)
+		if(iTestType==BACKPROPF)
+			rSes.iBpropThreads=iThreads;
+
+	// perform a warm-up to eliminate the always-longer first one, return true number of samples, prepare timer to resume @ 0.0;
+	GetRmseNN(rSes, rSes.iOutputFocus, 'R', cControlModel);
+	GetRmseNN(rSes, rSes.iOutputFocus, 'R', cExpModel);// evaluation is now included in classification tests
 			 
-			GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'D');// evaluation is now included in classification tests
-			 
-		tDev.start();
-		tDev.stop();
-	char sLog0[80]; sprintf(sLog0, "BEGIN CLASSIFY TEST: %d TRIALS, %d SAMPLES", iTrials, rSes.lSampleQtyReq);
-	//printf("\n\n%s\n\n", sLog0); 
+	sprintf(sLog0, "BEGIN %s TEST: %d TRIALS %d THREADS %d SAMPLES %c/%c", sTestType, iTrials, iThreads, rSes.lSampleQtyReq, cControlModel, cExpModel);
 	Barge->RLog( rSes, 0, sLog0);
-	//printf("-------------------------------\n");
+	if(iTestType==BACKPROPF) LetTaut(rSes);
 	for(int i=1; i<=iTrials; ++i){
-		// begin trainable sample test DEVICE
-		LetTaut(rSes);
-		tDev.resume();
+		if(iTestType==EVALUATEF) {
+			tExp.resume();
+			GetRmseNN(rSes, rSes.iOutputFocus, 'R', cExpModel); // run on device with refreshed values
+			fExpTime+=gElapsedTime; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
+			tExp.stop();
+			tCtrl.resume();
+			GetRmseNN(rSes, rSes.iOutputFocus, 'R', cControlModel); // update dHostRMSE
+			tCtrl.stop();
+			dDifferent += dExpDiff = GetLastRmse(rSes, cExpModel);
+			dDifferent -= dCtrlDiff = GetLastRmse(rSes, cControlModel);
+			sprintf(sLog0, "%s TRIAL %d: Exp RMSE %f, Ctrl RMSE %f", sTestType, i, dExpDiff, dCtrlDiff);
+			Barge->RLog(rSes, 0, sLog0);
+		}
+		if(iTestType==CLASSIFYF) {
+			LetTaut(rSes);
+			tExp.resume();
+			gKernelTimeTally=0.0; //reset global kernel time tally
+			iMargin += iDeviceTrainable=  LetTrainNNThresh(rSes, 0, 'E', rSes.dTargetRMSE, 1, 1, cExpModel);
+			fExpTime += gKernelTimeTally; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
+			tExp.stop();
+			LetSlack(rSes);
+			tCtrl.resume();
+			cuEvalNNLearnSet(rSes, o); // evaluation is now included separately in host classification tests
+			iMargin -= iHostTrainable = TrainNNThresh(rSes, false);
+			tCtrl.stop();
+			sprintf(sLog0, "%s TRIAL %d: Exp trainable %d, Ctrl trainable %d", sTestType, i, iDeviceTrainable, iHostTrainable);
+			Barge->RLog(rSes, 0, sLog0);
+		}
+		if(iTestType==BACKPROPF) {
 			gKernelTimeTally=0.0; //reset global kernel time tally
 			// evaluation is now integrated in device classification tests
-			iMargin+=iDeviceTrainable=LetTrainNNThresh(rSes, 0, 'E', rSes.dTargetRMSE, rSes.iEpochLength, 'D');
-			fDevTime+=gKernelTimeTally; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
-		tDev.stop();
-		LetSlack(rSes);
-		//printf("HST:");
-		{
-			//boost::timer::auto_cpu_timer o;
-			tHost.resume();
-				cuEvalNNLearnSet(rSes); // evaluation is now included separately in host classification tests
-				iMargin -= iHostTrainable=TrainNNThresh(rSes, false);
-			tHost.stop();
+				iMargin += iDeviceTrainable = LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, 1, 1, cExpModel); // backprop all samples, output usual, revise wts, target RMSE, epoch=single iteration YY change E to R
+				dDifferent += dExpDiff = GetLastRmse(rSes, cExpModel); //GetRmseNN(rSes, rSes.iOutputFocus, 'R', cExpModel);
+			fExpTime+=gKernelTimeTally; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
+			tCtrl.resume();
+				cuEvalNNLearnSet(rSes, o); // evaluation is now included separately in host classification tests
+				//iMargin -= iHostTrainable = TrainNNThresh( rSes, true);
+				iMargin -= iHostTrainable = TrainNNThresh( rSes, true);
+				dDifferent -= dCtrlDiff = GetRmseNN(rSes, rSes.iOutputFocus, 'R', cControlModel);
+			tCtrl.stop();
+			sprintf(sLog0, "%s TRIAL %d: %c Exp trainable %d, %c Ctrl trainable %d", sTestType, i, cExpModel, iDeviceTrainable, cControlModel, iHostTrainable);
+			Barge->RLog(rSes, 0, sLog0);
+			sprintf(sLog0, "%s TRIAL %d: %c Exp RMSE %f, %c Ctrl RMSE %f", sTestType, i, cExpModel, dExpDiff, cControlModel, dCtrlDiff);
+			Barge->RLog(rSes, 0, sLog0);
 		}
-		//printf("BOTH: delta trainable %d += %d - %d\n", iMargin, iDeviceTrainable, iHostTrainable);
-		//printf("-------------------------------%d\n", i);
-		iDeviceTrainable=iHostTrainable=0;
 	}
-
-	elapHost=tHost.elapsed();
-	elapDev =tDev.elapsed();
-	int64 denominator = iTrials*100000; // convert to tenths of milliseconds
-	int64 quotientHost = elapHost.wall / denominator;
-	int64 quotientDev  = elapDev.wall  / denominator;
-	double dAvgTimeHost = (double)quotientHost; 
-	double dAvgTimeDev = (double)quotientDev; 
-	
-	char sLog1[80]; sprintf(sLog1, "Host/Serial mean performance over %d runs: %.1f ms", iTrials, dAvgTimeHost/10);
-	char sLog2[80]; sprintf(sLog2, "Dev/CUDA    mean performance over %d runs: %.1f ms", iTrials, fDevTime/iTrials);
-	char sLog3[14]; sprintf(sLog3, ( iMargin ? "CLASSIFY FAIL" : "CLASSIFY PASS" ) );
-	//printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
-	Barge->RLog(rSes, 0, sLog1);
-	Barge->RLog(rSes, 0, sLog2);
-	Barge->RLog(rSes, 0, sLog3);
-	
-	rSes.lSampleQtyReq=iOldSampleQtyReq; // restore original sample set size just before exit
-	return (iMargin);
-}
-
-
-double cTeam::BackPropTest(struct rohanContext& rSes, struct rohanNetwork& rNet, int iTrials, int iThreads, int iSampleQty)
-{mIDfunc /// runs tests for backward propagation on both host and GPU
-	double dDifferent=0.0; float fDevTime=0.0;
-	int iDeviceTrainable, iHostTrainable, iMargin=0, oldThreads=rSes.iBpropThreads, iOldSampleQtyReq=rSes.lSampleQtyReq; 
-
-	if(iSampleQty>0)
-		rSes.lSampleQtyReq=iSampleQty; // change sample set size just for this function
-	else 
-		rSes.lSampleQtyReq=rSes.lSampleQty;
-	boost::timer::cpu_timer tHost;//, tDev;
-	boost::timer::cpu_times elapHost;//, elapDev;
-	rSes.iBpropThreads=iThreads;
-		// perform a warm-up host eval to eliminate the always-longer first one, return true number of samples, prepare timer to resume @ 0.0;
-		// printf("WARMUP:\n");
-			iSampleQty=cuEvalNNLearnSet(rSes);
-			RmseNN(rSes, 0); // update hostRMSE
-		tHost.start();
-		tHost.stop();
+	if(iTestType==BACKPROPF) LetSlack(rSes);
+	if(iTestType==EVALUATEF) iDifferent += OutputValidate(rSes);
 			
-			GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'D');// evaluation is now included in classification tests
-			 
-
-	char sLog0[80]; sprintf(sLog0, "BEGIN BACKPROP TEST: %d TRIALS, %d THREADS %d SAMPLES", iTrials, iThreads, rSes.lSampleQtyReq);
-	//printf("\n\n%s\n\n", sLog0); 
-	Barge->RLog( rSes, 0, sLog0);
-	//printf("-------------------------------\n");
-	LetTaut(rSes);
-	for(int i=1; i<=iTrials; ++i){
-		// begin BACKPROPagation test DEVICE
-			gKernelTimeTally=0.0; //reset global kernel time tally
-			// evaluation is now integrated in device classification tests
-			iMargin+=iDeviceTrainable=LetTrainNNThresh( rSes, rSes.iOutputFocus, 'R', rSes.dTargetRMSE, 1, 'D'); // backprop all samples, output usual, revise wts, target RMSE, epoch=single iteration YY change E to R
-			dDifferent += GetRmseNN(rSes, rSes.iOutputFocus, 'R', 'D');
-			fDevTime+=gKernelTimeTally; // device times are roughly equal to serial overhead; kernel launchers record time in global variable for later pickup
-		//printf(">>DEVICE: %d samples\n", lSamplesBpropDev);
-		//printf(">>DEVICE: RMSE=%f\n", rSes.dDevRMSE);
-		// end device test
-
-		// begin BACKPROPagation test HOST
-		//conPrintf("HST:");
-		{	
-			//boost::timer::auto_cpu_timer o;
-			tHost.resume();
-				cuEvalNNLearnSet(rSes); // evaluation is now included separately in host classification tests
-				iMargin -= iHostTrainable=TrainNNThresh( rSes, true); // YY change false to true
-				cuEvalNNLearnSet( rSes ); // re-revaluate learnset
-				dDifferent -= RmseNN( rSes, 0); // update RMSE
-			tHost.stop();
-		}
-		// end host test
-		//printf("BOTH: delta RMSE %f += %f - %f", dDifferent, rSes.dDevRMSE, rSes.dHostRMSE);
-		//printf("BOTH: delta trainable %d += %d - %d\n", iMargin, iDeviceTrainable, iHostTrainable);
-		//printf("----------------------%d\n", i);
-		iDeviceTrainable=iHostTrainable=0;
-	}
-	LetSlack(rSes);
-	elapHost=tHost.elapsed();
+	elapCtrl=tCtrl.elapsed();
+	elapExp =tExp.elapsed();
 	int64 denominator = iTrials*100000; // convert to tenths of milliseconds
-	int64 quotientHost = elapHost.wall / denominator;
-	double dAvgTimeHost = (double)quotientHost; 
-	rSes.iBpropThreads=oldThreads;
-	char sLog1[80]; sprintf(sLog1, "Host/Serial mean performance over %d runs: %.1f ms", iTrials, dAvgTimeHost/10); //converted from tenths of ms to full ms
-	char sLog2[80]; sprintf(sLog2, "Dev/CUDA    mean performance over %d runs: %.1f ms", iTrials, fDevTime/iTrials);
-	char sLog3[14]; sprintf(sLog3, ( (iMargin || abs(dDifferent)>.001 ) ? "BACKPROP FAIL" : "BACKPROP PASS" ) );
-	//printf(" %s\n %s\n\n%s\n\n", sLog1, sLog2, sLog3);
+	int64 quotientCtrl = elapCtrl.wall / denominator;
+	int64 quotientExp  = elapExp.wall  / denominator;
+	double dAvgTimeHost = (double)quotientCtrl; 
+	double dAvgTimeDev = (double)quotientExp; 
+	double su = ((dAvgTimeHost/10)/(fExpTime/iTrials));
+	int cWt=crc32buf( (char*)rSes.rNet->Wt, 16*MAXWEIGHTS );int eWt=knlCRC32Buf( (char*)rSes.devNet->Wt, MAXWEIGHTS * 16);
+	sprintf(sLog0, "final Ctrl wt state: %08lX %s final Expr wt state: %08lX", cWt, (cWt==eWt ? "==" : "!="), eWt ); // weight check
+	sprintf(sLog1, "Control    mean performance over %d runs: %.1f ms", iTrials, dAvgTimeHost/10);
+	sprintf(sLog2, "Experiment mean performance over %d runs: %.1f ms", iTrials, fExpTime/iTrials);
+	if(iTestType==EVALUATEF) {
+		if(iDifferent || abs(dDifferent)>.001 ) iPassed=false;
+		sprintf(sLog3, "%s\t%s\t%c s%d\td/%d,%f/\tsu %.1fx", ( iPassed ? "Evaluate Pass" :"EVALUATE FAIL" ), rSes.sNetString, rSes.cEngagedModel, iSampleQtyReq, iDifferent, dDifferent, su );
+	}
+	if(iTestType==CLASSIFYF) {
+		if(iMargin) iPassed=false;
+		sprintf(sLog3, "%s\t%s\t%c\td/%d/\tsu %.1fx", ( iPassed ? "Classify Pass" : "CLASSIFY FAIL"), rSes.sNetString, rSes.cEngagedModel, iMargin, su );
+	}
+	if(iTestType==BACKPROPF) {
+		if(iMargin || abs(dDifferent)>.01 ) iPassed=false;
+		sprintf(sLog3, "%s\t%s\t%c %d %d\td/%d,%f/\tsu %.1fx", ( iPassed ? "Backprop Pass" : "BACKPROP FAIL"), rSes.sNetString, rSes.cEngagedModel, iBlocks, iThreads, iMargin, dDifferent, su );
+	}
+	Barge->RLog(rSes, 0, sLog0);
 	Barge->RLog(rSes, 0, sLog1);
 	Barge->RLog(rSes, 0, sLog2);
-	Barge->RLog(rSes, 0, sLog3);
+	Barge->RLog(rSes, 0+ADMINF, sLog3);
 	
 	rSes.lSampleQtyReq=iOldSampleQtyReq; // restore original sample set size just before exit
-	return (iMargin+dDifferent);
+	rSes.iBpropThreads=oldThreads; // restore original threads and blocks
+	Barge->RLog(rSes, 0, __FUNCTION__);
+	
+	return (iPassed);
 }
 
 
@@ -912,9 +877,11 @@ double cTeam::CUDAverify(struct rohanContext& rSes)
 				}
 			}
 		}
+		Barge->RLog(rSes, 0, __FUNCTION__);
 		return compCap;
 	}
 	else 
+		Barge->RLog(rSes, 0, __FUNCTION__);
 		return 0; // not available
 }
 
@@ -968,38 +935,171 @@ void cTeam::CUDAShowProperties(struct rohanContext& rSes, int device, FILE* fSho
 		// end borrowed section
 		fprintf(fShow,"  sizeof devSes, devLearn, devNet:               %d, %d, %d\n", sizeof(rohanContext), sizeof(rohanLearningSet), sizeof(rohanNetwork) );
 	}
+	Barge->RLog(rSes, 0, __FUNCTION__);
 }
-
-int cTeam::cuMessage(cublasStatus csStatus, char *sName, char *sCodeFile, int iLine, char *sFunc)
-{	
-	char *sMsg;
-
-	switch (csStatus) {
-		case CUBLAS_STATUS_SUCCESS: sMsg=_strdup("operation completed successfully");
-			break;
-		case CUBLAS_STATUS_NOT_INITIALIZED: sMsg=_strdup("library not initialized");
-			break;
-		case CUBLAS_STATUS_ALLOC_FAILED: sMsg=_strdup("resource allocation failed");
-			break;
-		case CUBLAS_STATUS_INVALID_VALUE: sMsg=_strdup("unsupported numerical value was passed to function");
-			break;
-		case CUBLAS_STATUS_ARCH_MISMATCH: sMsg=_strdup("function requires an architectural feature absent from the architecture of the device");
-			break;
-		case CUBLAS_STATUS_MAPPING_ERROR: sMsg=_strdup("access to GPU memory space failed");
-			break;
-		case CUBLAS_STATUS_EXECUTION_FAILED: sMsg=_strdup("GPU program failed to execute");
-			break;
-		case CUBLAS_STATUS_INTERNAL_ERROR: sMsg=_strdup("an internal operation failed");
-			break;
-		default: sMsg=_strdup("unknown response");
-	}
-	fprintf(stderr,"%s %s line %i: CUBLAS %s: %s\n", sCodeFile, sFunc, iLine, sMsg, sName);
-	return 0;
-}
-
-
 
 void cTeam::TeamLog(struct rohanContext& rSes, int iRank, char * sLogEntry) 
 {mIDfunc /// wrapper to call cBarge's RLog from CUDA C kernel launchers
 	Barge->RLog(rSes, iRank, sLogEntry);
 }
+
+double cTeam::GetLastRmse(struct rohanContext& rSes, char model)
+{mIDfunc /// Get latest recorded Rmse values
+	double dReturn=888.888;
+	char sLog[255];
+	if(model=='B'){
+		dReturn=rSes.dLastRmseB; // model B Block
+	}
+	if(model=='G'){
+		dReturn=rSes.dLastRmseG; // model G global memory
+	}
+	if(model=='S'){
+		dReturn=rSes.dLastRmseS; // model S serial
+	}
+	if(model=='3'){
+		dReturn=rSes.dLastRmse3; // model 3 wide HN3
+	}
+	sprintf(sLog, "%s %c returns %f.", __FUNCTION__, model, dReturn);
+	Barge->RLog(rSes, 0, sLog);
+	return dReturn;
+}
+
+void cTeam::UpdateRmseRecord(struct rohanContext& rSes, double lastRmse, double bestRmse, char cModel)
+{mIDfunc /// update latest Rmse values
+
+	if(cModel=='B'){
+		rSes.dLastRmseB=lastRmse; // model B Block
+		rSes.dBestRmseB=bestRmse;
+	}
+	if(cModel=='G'){
+		rSes.dLastRmseG=lastRmse; // model G global memory
+		rSes.dBestRmseG=bestRmse;
+	}
+	if(cModel=='S'){
+		rSes.dLastRmseS=lastRmse; // model S serial
+		rSes.dBestRmseS=bestRmse;
+	}
+	if(cModel=='3'){
+		rSes.dLastRmse3=lastRmse; // model 3 wide HN3
+		rSes.dBestRmse3=bestRmse;
+	}
+	
+	rSes.dPrevLastRMSE=rSes.dLastRMSE;
+	rSes.dPrevBestRMSE=rSes.dBestRMSE;
+	rSes.dLastRMSE=lastRmse;
+	rSes.dBestRMSE=bestRmse;
+	char sLog[255];
+	sprintf(sLog,"%s(rSes, %3.2f, %3.2f, %c) replaces %3.2f, %3.2f", __FUNCTION__, lastRmse, bestRmse, cModel, rSes.dPrevLastRMSE, rSes.dPrevBestRMSE);
+	Barge->RLog(rSes, 0, sLog);
+}
+
+double cTeam::CalcRmseSerial(struct rohanContext& rSes, int o)
+{mIDfunc /*! checks sampled outputs vs evaluated outputs and calculates root mean squared error. */
+	// Y evaluated outputs must be made ready before calling this function.
+	// o controls which output is used for evaluation (0=all)
+	double AccumSquareError=0.0;
+	double dReturn;
+	char sLog[255];
+
+	sprintf(sLog, "\t%s(rSes, o=%d) called", __FUNCTION__, o); 
+	//fprintf(rSes.hostBucket,"%s\n", sLog);
+	Barge->RLog(rSes, 0, sLog); 
+
+	for(int s=0; s<rSes.lSampleQtyReq; ++s){  // loop over all requested samples and documented outputs
+		if(o){
+			AccumSquareError+=rSes.rLearn->dSqrErr[IDX2C( o, s, (rSes.rLearn->iOutputQty+1))];
+		}
+		else {
+			for(int i=1; i<=rSes.rLearn->iOutputQty; ++i){
+				AccumSquareError+=rSes.rLearn->dSqrErr[IDX2C( o, s, (rSes.rLearn->iOutputQty+1))];
+			}
+		}
+		//fprintf(rSes.hostBucket, "s%3d: D%6.3f - Y%6.3f -> SE%7.3f\n", s, rSes.rLearn->dDOutputs[IDX2C( 1, s, 2 )], rSes.rLearn->dYEval[IDX2C( 1, s, 2 )], rSes.rLearn->dSqrErr[IDX2C( 1, s, 2 )]);
+	}
+	// take the root of the mean of the accumulated square error
+	if (o){
+		dReturn=sqrt( (AccumSquareError/(rSes.lSampleQtyReq )) ); 
+		sprintf(sLog, "\t%s(rSes, o=%d) returns %.6f=sqrt(%2.2f/%d)", __FUNCTION__, o , dReturn, AccumSquareError, rSes.lSampleQtyReq); 
+	}
+	else{
+		dReturn=sqrt( (AccumSquareError/(rSes.lSampleQtyReq * rSes.rLearn->iOutputQty)) ); 
+		sprintf(sLog, "\t%s(rSes, o=%d) returns %.6f=sqrt(%2.2f/(%d * %d))", __FUNCTION__, o , dReturn, AccumSquareError, rSes.lSampleQtyReq, rSes.rLearn->iOutputQty); 
+	}
+	
+	//fprintf(rSes.hostBucket,"%s\n", sLog);
+	Barge->RLog(rSes, 0, sLog); 
+	return dReturn;
+}
+
+void cTeam::SetTestModels(char xp, char control)
+{
+	cExpModel=xp;
+	cControlModel=control;
+}
+
+int cTeam::TrainNNThresh(struct rohanContext& rSes, int bChangeWeights)
+{mIDfunc 
+/*! checks sampled outputs vs evaluated outputs, and returns number of samples that exceed threshold
+ *  excessive samples are submitted for backpropagation if bChangeWeights is true.
+ */
+	// needs multiple output support? XX
+	int iReturn=0;
+	double dDelta=0;
+	int ROWLEN = rSes.rLearn->iOutputQty+1 ;
+	//adjust requested amount to available values
+	for(int s=0; s<rSes.lSampleQtyReq; ++s){  // loop over samples.
+		int iOverMAX=0;
+		for(int i=0; i<=rSes.rLearn->iOutputQty; ++i){  // loop over outputs.
+			dDelta = (double) abs( rSes.rLearn->dDOutputs[ IDX2C( i, s, ROWLEN ) ] - rSes.rLearn->dYEval[ IDX2C( i, s, ROWLEN ) ] );
+			if((dDelta*2)>rSes.rNet->iSectorQty)
+				dDelta=rSes.rNet->iSectorQty-dDelta;
+			if( dDelta > rSes.dMAX)  // if effective error exceeds MAX, make a note
+				++iOverMAX;
+		}
+		if (iOverMAX!=0) {	 // if a note has been made. 
+			++iReturn; // increment the number of excessive samples.
+			if (bChangeWeights) {  // and correct weights if that is desired.
+				cuBackpropSingleSample(rSes, s, *rSes.rNet, rSes.rNet->Signals, rSes.rNet->Zs, rSes.rNet->Wt, rSes.rNet->Deltas, rSes.rLearn->cdcXInputs, rSes.rLearn->cdcYEval, rSes.rLearn->dYEval);
+			}
+		}
+	}
+	char sLog[255];
+	sprintf(sLog, "\tTrainNNThresh(rSes, bChangeWeights=%d) returns %d submitted samples",  bChangeWeights, iReturn); 
+	Barge->RLog(rSes, 0, sLog); 
+	Barge->RLog(rSes, 0, __FUNCTION__);
+	return (iReturn);
+}
+
+int cTeam::TrainNNThreshGGG(struct rohanContext& rSes, int bChangeWeights)
+{mIDfunc 
+/*! checks sampled outputs vs evaluated outputs, and returns number of samples that exceed threshold
+ *  excessive samples are submitted for backpropagation if bChangeWeights is true.
+ */
+	// needs multiple output support? XX
+	int iReturn=0;
+	double dDelta=0;
+	int ROWLEN = rSes.rLearn->iOutputQty+1 ;
+	//adjust requested amount to available values
+	for(int s=0; s<rSes.lSampleQtyReq; ++s){  // loop over samples.
+		int iOverMAX=0;
+		for(int i=0; i<=rSes.rLearn->iOutputQty; ++i){  // loop over outputs.
+			dDelta = (double) abs( rSes.rLearn->dDOutputs[ IDX2C( i, s, ROWLEN ) ] - rSes.rLearn->dYEval[ IDX2C( i, s, ROWLEN ) ] );
+			if((dDelta*2)>rSes.rNet->iSectorQty)
+				dDelta=rSes.rNet->iSectorQty-dDelta;
+			if( dDelta > rSes.dMAX)  // if effective error exceeds MAX, make a note
+				++iOverMAX;
+		}
+		if (iOverMAX!=0) {	 // if a note has been made. 
+			++iReturn; // increment the number of excessive samples.
+			if (bChangeWeights) {  // and correct weights if that is desired.
+				cuBackpropSingleSampleGGG(rSes, s, *rSes.rNet, rSes.rNet->Signals, rSes.rNet->Zs, rSes.rNet->Wt, rSes.rNet->Deltas, rSes.rLearn->cdcXInputs, rSes.rLearn->cdcYEval, rSes.rLearn->dYEval);
+			}
+		}
+	}
+	char sLog[255];
+	sprintf(sLog, "\tTrainNNThresh(rSes, bChangeWeights=%d) returns %d submitted samples",  bChangeWeights, iReturn); 
+	Barge->RLog(rSes, 0, sLog); 
+	Barge->RLog(rSes, 0, __FUNCTION__);
+	return (iReturn);
+}
+

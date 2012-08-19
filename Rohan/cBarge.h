@@ -11,7 +11,6 @@ using namespace boost::program_options;
 using namespace std;
 
 #include <iostream>
-#include <fstream>
 #include <iterator>
 #include "stdafx.h"
 
@@ -23,14 +22,23 @@ class cBarge
 		class cDrover * Drover /*! The user-agent "driver" currently in use. */;
 		class cRamp * Ramp;
 		class cTeam * Team /*! The calculating "engine" currently in use. */;
+
+		vector<cuDoubleComplex> LastWtKebabB;
+		vector<cuDoubleComplex> BestWtKebabB;
+		vector<cuDoubleComplex> LastWtKebabP;
+		vector<cuDoubleComplex> BestWtKebabP;
+		vector<cuDoubleComplex> LastWtKebab3;
+		vector<cuDoubleComplex> BestWtKebab3;
+		vector<cuDoubleComplex> LastWtKebabS;
+		vector<cuDoubleComplex> BestWtKebabS;
 	public:
-		cBarge( struct rohanContext& rSes){ SetContext(rSes); /*ShowMe();*/ } ; // end ctor
-		void ShowMe();
+		vector<int> ivTopoNN; 
+		vector<int> ivOffsetK; 
+		vector<int> ivOffsetQ; 
 		class variables_map vm /*! A variable map containing all program_options in use. */;
+		cBarge( struct rohanContext& rSes) ; // end ctor
+		void ShowMe();
 		int SetContext( struct rohanContext& rSes); // completed
-			int SetDrover( class cDrover * cdDrover); // completed
-			int SetRamp( class cRamp * crRamp);
-			int SetTeam( class cTeam * ctTeam); // completed
 		int PrepareAllSettings(struct rohanContext& rSes); /// sets initial and default value for globals and settings
 			void ResetSettings(struct rohanContext& rSes, struct rohanNetwork& rNet, struct rohanLearningSet& rLearn);
 			int SetProgOptions(struct rohanContext& rSes, int argc, _TCHAR * argv[]); // interprets command line options
@@ -38,7 +46,9 @@ class cBarge
 			int BeginLogging(struct rohanContext& rSes);
 			void GetOptions(struct rohanContext& rSes, struct rohanNetwork& rNet, struct rohanLearningSet& rLearn);
 				int GetEvalOpt(struct rohanContext& rSes);
+				int GetContyOpt(struct rohanContext& rSes);
 				int GetSamplesOpt(struct rohanContext& rSes);
+				int GetTSeriesOpt(struct rohanContext& rSes);
 				int GetWeightsOpt(struct rohanContext& rSes);
 				int GetLearnOpt(struct rohanContext& rSes);
 				int GetNetworkOpt(struct rohanContext& rSes, struct rohanNetwork& rNet);
@@ -46,10 +56,10 @@ class cBarge
 				int GetHdweSet(struct rohanContext& rSes);
 			void PrepareNetSettings(struct rohanContext& rSes, struct rohanNetwork& rNet);
 			void PrepareLearnSettings(struct rohanContext& rSes, struct rohanLearningSet& rLearn);
-		int ObtainSampleSet(struct rohanContext& rSes); /// chooses and loads the learning set to be worked with Ante-Loop
-			int DoLoadSampleSet(struct rohanContext& rSes, FILE *fileInput); /// pulls in values from .txt files, used for testing before main loop
+		int ObtainSampleSet(struct rohanContext& rSes); /// chooses and loads the learning set to be worked with by AnteLoop
 			int CurateSectorValue(struct rohanContext& rSes); /// compares sector qty to sample values for adequate magnitude
 			int CompleteHostLearningSet(struct rohanContext& rSes); /// allocate, fill cx converted value & alt values, all in host memory
+			int CompleteHostLearningSetGGG(struct rohanContext& rSes); /// allocate, fill cx converted value & alt values, all in host memory
 				//int cuDoubleComplex ConvSectorCx(struct rohanContext& rSes, int Scalar); // converts a scalar value to a returned complex coordinate)
 			//int LetCplxCopySamples(struct rohanContext& rSes); //load complex samples into the parallel structures in the host memory
 		int DoPrepareNetwork(struct rohanContext& rSes); /// sets up network poperties and data structures for use
@@ -57,28 +67,17 @@ class cBarge
 		int cuMakeArchValues(struct rohanContext& rSes, struct rohanNetwork& rNet);
 		int cuMakeNNStructures(struct rohanContext &rSes);
 		int LayersToBlocks(struct rohanContext& Ses); //, struct rohanNetwork& Net); /// moves weight values from old layer structures to new block structures
-		int TokenCounter(const char * String, char * Delimiters);
-		int GetNthToken(char * String, char * Delimiters, char Token[255], int N); // shold fix fixed length string XX
-		int CharRemover(char * String, char Remove);
-		int BinaryFileHandleRead(struct rohanContext& rSes, char* sFileName, FILE** fileInput);
-		int BinaryFileHandleWrite(char *sFileName, FILE **fileOutput);
-		int AsciiFileHandleRead(struct rohanContext& rSes, char *sFileName, FILE **fileInput);
-		int AsciiFileHandleWrite(char *sFilePath, char *sFileName, FILE **fileOutput);
-		int cuNNLoadWeights(struct rohanContext &rSes, FILE *fileInput);
-		int cuSaveNNWeights(struct rohanContext &rSes, FILE *fileOutput);
-		int cuSaveNNWeightsASCII(struct rohanContext &rSes, FILE *fileOutput);
-		int cuPreSaveNNWeights(struct rohanContext& rSes, char cVenue);
-		int AsciiWeightDump(struct rohanContext& rSes, FILE *fileOutput);
-		int LetWriteWeights(struct rohanContext& rSes); /// saves weight values to disk
-		int LetWriteEvals(struct rohanContext& rSes, struct rohanLearningSet& rLearn); /// saves evaluated output values to disk
 		int ShowDiagnostics(struct rohanContext& rSes);
 		static char sep_to_space(char c);
 		template <typename T>
 		int VectorFromOption(char * sOption, vector<T> & n, int p);
+		int cuMessage(cublasStatus csStatus, char *sName, char *sCodeFile, int iLine, char *sFunc);
 		static void RLog(struct rohanContext& rSes, int iRank, char * sLogEntry);
 		int DoCuFree(struct rohanContext &rSes);
 			int cuFreeNNTop(struct rohanContext &rSes); /// frees data structures related to network topology
 			int cuFreeLearnSet(struct rohanContext &rSes); /// free the learning set of samples
+		void LogFlush(struct rohanContext &rSes);
+private:
 };
 
 template <typename T>
@@ -87,14 +86,18 @@ int cBarge::VectorFromOption(char * sOption, vector<T> & n, int p)
 	// returns p if # of elements match, otherwise returns 0
 	string s;
 
-	s=cBarge::vm[sOption].as<string>();
-	transform(s.begin(), s.end(), s.begin(), &cBarge::sep_to_space );
-	stringstream ss(s);
-	copy(istream_iterator<T>(ss), istream_iterator<T>(), std::back_inserter(n));
-	if(p==n.size())
-		return p; // evals to true (unless p is zero for some reason)
+	if(vm.count(sOption)){ // only go ahead if there is something to be converted
+		s=cBarge::vm[sOption].as<string>();
+		transform(s.begin(), s.end(), s.begin(), &cBarge::sep_to_space );
+		stringstream ss(s);
+		copy(istream_iterator<T>(ss), istream_iterator<T>(), std::back_inserter(n));
+		if(p==n.size())
+			return p; // evals to true (unless p is zero for some reason)
+		else
+			return 0; // evals to false
+	}
 	else
-		return 0; // evals to false
+		return 0;
 }
 
 int AskSessionName(struct rohanContext& rSes);

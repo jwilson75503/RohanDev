@@ -1,0 +1,58 @@
+#
+# Model .roh file for Rohan automation written by Jeff for Justin on July 5, 
+# 2012, revised August 12.
+# Rohan will always look for rohan.roh unless instructed to look for other 
+# config files by CLI args.
+# 
+# Blank lines and lines beginning with # are ignored by Rohan.
+# Instructive lines are in the form of 'keyword=value' and
+# are processed into a variable map.
+
+# Treat samples as a time series, giving <# of lines in sample file to be used
+# as data, 1/0 for ordered from bottom to top, # of values taken from each 
+# line, 1/0 for read right to left, 1/0 for discrete/continuous values, # of 
+# lines to combine into 1 sample, line stride (increment) between samples>
+# OPTIONAL
+
+tseries=<8000,0, 2,0, 1, 100,1>
+
+# samples' value specification = name of the text file that contains the 
+# comma, tab, or space delimited lines of sample tuples. REQUIRED
+
+samples=AirplanePsDN1W3S10k.txt
+
+# continuity/discreteness of inputs, outputs, internal activation, final 
+# activation. OPTIONAL
+
+conty=<1,0,1,0>
+
+# weights' value  specification = name of the file that contains the binary 
+# representation of the neural weights. OPTIONAL
+
+weights="JustinRmse000.WGT"
+
+# network's value specification is < # sectors, # inputs, size of first 
+# hidden layer or 0, size of second hidden layer or 0, # of outputs >.
+# REQUIRED
+
+network=<384,9,54,0,1>
+
+# eval's value specification is <1/0 for numbering tuples in sequence, 1/0 
+# for including tuple's input values, 1/0 for including tuple' output values, 
+# qty of tuples to include in evaluation/prediction, beginning sample idx>. 
+# OPTIONAL
+
+eval=<1,1,1,10000,0>
+
+# learn's value specification is < target RMSE, MAX, # of samples used, warp 
+# factor, iterations per epoch, qty of epochs for learning>. Warp 1 is always
+# safe, use other values at your own risk!! Training is saved at the end of
+# each epoch; epoch durations depend on network and sample sizes. OPTIONAL
+
+learn=<9.5,10,10000,1,500,2000>
+
+# the tag value is a name used to identify the files Rohan generates during 
+# a session. Rohan's reply will be NahorNahor.han, reports will be 
+# NahorNahor937Evals.txt, etc. OPTIONAL
+
+tag=NahorNahor

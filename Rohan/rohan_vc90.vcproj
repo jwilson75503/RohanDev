@@ -37,9 +37,11 @@
 			/>
 			<Tool
 				Name="Cudart Build Rule"
-				Include="../../../shared/inc;../../common/inc;./"
+				Include="$(CUDA_PATH)/include;./;../../common/inc;../../../shared/inc"
 				Arch1="21"
-				Arch3="30"
+				Arch2="0"
+				Arch3="0"
+				Keep="false"
 				HostDebugInfo="true"
 				Optimization="0"
 				Runtime="1"
@@ -55,7 +57,6 @@
 			/>
 			<Tool
 				Name="VCCLCompilerTool"
-				UseUnicodeResponseFiles="false"
 				Optimization="0"
 				AdditionalIncludeDirectories="&quot;$(CUDA_PATH)/include&quot;;&quot;C:\Program Files\boost\boost_1_48_0&quot;;&quot;D:\Program Files\boost\boost_1_48_0&quot;;./;../../common/inc;../../../shared/inc"
 				PreprocessorDefinitions="WIN32;_DEBUG;_CONSOLE;_CRT_SECURE_NO_WARNINGS"
@@ -418,10 +419,6 @@
 				>
 			</File>
 			<File
-				RelativePath=".\ShowMe.cpp"
-				>
-			</File>
-			<File
 				RelativePath=".\stdafx.cpp"
 				>
 			</File>
@@ -466,6 +463,13 @@
 			<File
 				RelativePath=".\Kernels.cuh"
 				>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCustomBuildTool"
+					/>
+				</FileConfiguration>
 			</File>
 			<File
 				RelativePath=".\lock.h"
